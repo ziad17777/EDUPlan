@@ -1,3 +1,4 @@
+import NavbarAction from "./NavbarAction";
 import NavbarBrand from "./NavbarBrand";
 import NavbarCon from "./NavbarCon";
 import NavbarLink from "./NavbarLink";
@@ -8,12 +9,12 @@ const routes = [
     url:"/"
 },
 {
-    title:"support",
-    url:"/support"
+    title:"pricing",
+    url:"/pricing"
 },
 {
-    title:"service",
-    url:"/service"
+    title:"contact",
+    url:"/contact"
 },
 ]
 
@@ -35,6 +36,8 @@ export default function Navbar(){
 }
 </NavbarMenu>
     </div>
+<NavbarAction/>
+
         </NavbarCon>
     )
 }

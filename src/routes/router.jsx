@@ -1,10 +1,14 @@
 import { createBrowserRouter } from "react-router";
 import Landing from "./layouts/Landing.out";
 import Home from "./pages/Home.page";
-import Service from "./pages/Service.page";
-import Support from "./pages/Support.page";
+import Service from "./pages/Pricing.page";
+import Support from "./pages/Contact.page";
 import Auth from "./layouts/Auth.out";
 import App from "./layouts/App.out";
+import SignIn from "./pages/SignIn.page";
+import SignUp from "./pages/SignUp.page";
+import Pricing from "./pages/Pricing.page";
+import Contact from "./pages/Contact.page";
 const router = createBrowserRouter([
   // { path: '/', element: <LoginPage /> },
   {
@@ -16,12 +20,12 @@ const router = createBrowserRouter([
         element: <Home />,
       },
       {
-        path: "service",
-        element: <Service />,
+        path: "pricing",
+        element: <Pricing />,
       },
       {
-        path: "support",
-        element: <Support />,
+        path: "contact",
+        element: <Contact />,
       },
     ],
   },
@@ -32,11 +36,11 @@ const router = createBrowserRouter([
 
       {
         path: "signin",
-        element: <div>signin</div>,
+        element: <SignIn/>,
       },
             {
         path: "signup",
-        element: <div>signup</div>,
+        element: <SignUp/>,
       },
             {
         path: "forget-password",
