@@ -9,6 +9,7 @@ import SignIn from "./pages/SignIn.page";
 import SignUp from "./pages/SignUp.page";
 import Pricing from "./pages/Pricing.page";
 import Contact from "./pages/Contact.page";
+import AppPage from "./pages/App.page";
 const router = createBrowserRouter([
   // { path: '/', element: <LoginPage /> },
   {
@@ -59,7 +60,7 @@ const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <div>Chat</div>,
+        element: <AppPage/>,
       },
       {
         path: "setting",

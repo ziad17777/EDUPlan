@@ -32,7 +32,7 @@ export default function Footer() {
         </div>
         <div className="mt-8 border-t border-gray-800 pt-6 text-center text-sm text-gray-400">
           <p>
-            © 2024 EduPlan. All rights reserved.{" "}
+            © 2026 eduplan. All rights reserved.{" "}
             {legalLinks.map((link, idx) => (
               <span key={link.url}>
                 <Link className="hover:text-primary" to={link.url}>
