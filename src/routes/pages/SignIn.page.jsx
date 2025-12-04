@@ -12,11 +12,13 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Link } from "react-router-dom";  // or wherever your router is
+import { Link } from "react-router-dom"; // or wherever your router is
 
 const signInSchema = z.object({
   email: z.string().email({ message: "Invalid email address" }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters" }),
+  password: z
+    .string()
+    .min(6, { message: "Password must be at least 6 characters" }),
 });
 
 export default function SignIn() {
@@ -101,19 +103,21 @@ export default function SignIn() {
           </form>
         </Form>
 
-    <div className="my-6 flex items-center">
+        <div className="my-6 flex items-center">
           <div className="flex-grow border-t border-white/20" />
-          <span className="mx-4 text-sm text-white/60">Don’t have an account?</span>
+          <span className="mx-4 text-sm text-white/60">
+            Don’t have an account?
+          </span>
           <div className="flex-grow border-t border-white/20" />
         </div>
 
         <div className="mt-6 text-center">
-            <Link
-              to="/auth/signup"
-              className="font-semibold text-primary hover:underline"
-            >
-              Sign up
-            </Link>
+          <Link
+            to="/auth/signup"
+            className="font-semibold text-primary hover:underline"
+          >
+            Sign up
+          </Link>
         </div>
       </div>
     </section>

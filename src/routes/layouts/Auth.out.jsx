@@ -1,5 +1,5 @@
 import { Outlet } from "react-router";
-import Navbar from "@/components/layout/Navbar";
+import Navbar from "@/components/layout/Navbarold";
 
 export default function Auth() {
   return (
