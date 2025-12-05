@@ -542,16 +542,15 @@ Want to see your name here? Check out our [Contributing Guidelines](#-contributi
 
 ### Get Help
 
-- 📫 **Email**: support@eduplan.com
-- 💬 **Discord**: [Join our community](https://discord.gg/eduplan)
-- 🐛 **Issues**: [GitHub Issues](https://github.com/ziad17777/EDUPlan/issues)
-- 📖 **Documentation**: [Wiki](https://github.com/ziad17777/EDUPlan/wiki)
+- 🐛 **Issues**: [GitHub Issues](https://github.com/ziad17777/EDUPlan/issues) - Report bugs or request features
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/ziad17777/EDUPlan/discussions) - Ask questions and share ideas
+- 📧 **Email**: Create an issue on GitHub for the fastest response
 
-### Social Media
+### Connect With Us
 
-- 🐦 **Twitter**: [@eduplan](https://twitter.com/eduplan)
-- 📘 **Facebook**: [EDUPlan](https://facebook.com/eduplan)
-- 💼 **LinkedIn**: [EDUPlan](https://linkedin.com/company/eduplan)
+- ⭐ **Star this repo**: Show your support and stay updated
+- 🔔 **Watch**: Get notifications about updates and releases
+- 🍴 **Fork**: Create your own version and contribute back
 
 ---
 
