@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![EDUPlan Banner](https://via.placeholder.com/1200x300/1e40af/ffffff?text=EDUPlan+-+AI-Powered+Learning+Platform)
+![EDUPlan Banner](https://github.com/ziad17777/EDUPlan/blob/fe6ce10b9b891510010a418be8122ef1ca6c94f0/unnamed.jpg)
 
 **The ultimate study companion every student needs.**
 
