@@ -10,6 +10,9 @@ import SignUp from "./pages/SignUp.page";
 import Pricing from "./pages/Pricing.page";
 import Contact from "./pages/Contact.page";
 import AppPage from "./pages/App.page";
+import ProfilePage from "./pages/Profile.page";
+import SettingPage from "./pages/Setting.page";
+import HistoryPage from "./pages/History.page";
 const router = createBrowserRouter([
   // { path: '/', element: <LoginPage /> },
   {
@@ -64,11 +67,15 @@ const router = createBrowserRouter([
       },
       {
         path: "setting",
-        element: <div>setting</div>,
+        element: <SettingPage />,
+      },
+      {
+        path: "history",
+        element: <HistoryPage />,
       },
       {
         path: "profile",
-        element: <div>profile</div>,
+        element: <ProfilePage/>,
       },
     ],
   },

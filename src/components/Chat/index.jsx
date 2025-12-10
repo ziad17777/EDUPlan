@@ -9,11 +9,43 @@ export default function Chat() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const chatRef = useRef(null);
+  const sessionIdRef = useRef(null);
+  const SESSIONS_KEY = "eduplan_chat_sessions";
 
   // Auto scroll when messages update
   useEffect(() => {
     if (chatRef.current) {
       chatRef.current.scrollTop = chatRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  // create new session on mount and persist messages to localStorage
+  useEffect(() => {
+    try {
+      const id = Date.now();
+      sessionIdRef.current = id;
+      const stored = JSON.parse(localStorage.getItem(SESSIONS_KEY) || "[]");
+      const session = { id, createdAt: new Date().toISOString(), messages: [] };
+      stored.unshift(session);
+      localStorage.setItem(SESSIONS_KEY, JSON.stringify(stored));
+    } catch (e) {
+      // ignore localStorage errors
+      console.warn("Could not create chat session", e);
+    }
+  }, []);
+
+  // persist messages to the current session
+  useEffect(() => {
+    if (!sessionIdRef.current) return;
+    try {
+      const stored = JSON.parse(localStorage.getItem(SESSIONS_KEY) || "[]");
+      const idx = stored.findIndex((s) => s.id === sessionIdRef.current);
+      if (idx >= 0) {
+        stored[idx] = { ...stored[idx], messages };
+        localStorage.setItem(SESSIONS_KEY, JSON.stringify(stored));
+      }
+    } catch (e) {
+      console.warn("Could not persist chat messages", e);
     }
   }, [messages]);
 
