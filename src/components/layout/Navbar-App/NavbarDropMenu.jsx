@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/store/auth";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,12 +12,18 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export default function NavbarDropMenu() {
+  const { user, signout } = useAuth();
+  const initials = user?.username ? user.username.split(' ').map(s=>s[0]).join('').slice(0,2).toUpperCase() : 'CN';
   return (
     <DropdownMenu>
       <DropdownMenuTrigger>
         <Avatar>
-          <AvatarImage src="https://github.com/shadcn.png" />
-          <AvatarFallback>CN</AvatarFallback>
+          {user?.username ? <AvatarFallback>{initials}</AvatarFallback> : (
+            <>
+              <AvatarImage src="https://github.com/shadcn.png" />
+              <AvatarFallback>CN</AvatarFallback>
+            </>
+          )}
         </Avatar>
       </DropdownMenuTrigger>
       <DropdownMenuContent>
@@ -39,7 +46,7 @@ export default function NavbarDropMenu() {
         <DropdownMenuSeparator />
 
         <DropdownMenuItem>
-            <Button  variant="destructive" className="w-full " onClick={()=> console.log("logout")} >
+            <Button  variant="destructive" className="w-full " onClick={()=> signout()} >
                 logout
                 </Button>
         </DropdownMenuItem>

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Link } from "react-router-dom"; // or your routing library
+import { useAuth } from "@/store/auth";
 
 // 1. Define a more complete schema including name, role, grade
 const signUpSchema = z.object({
@@ -25,6 +26,7 @@ const signUpSchema = z.object({
 });
 
 export default function SignUp() {
+  const { signup } = useAuth();
   const form = useForm({
     resolver: zodResolver(signUpSchema),
     mode: "onSubmit",
@@ -36,8 +38,13 @@ export default function SignUp() {
   });
 
   const onSubmit = (data) => {
-    console.log("Sign up data:", data);
-    // call your API / backend to register user
+    signup({ name: data.name, email: data.email, password: data.password }).then((resp)=>{
+      if (resp.ok) {
+        window.location.href = '/app';
+      } else {
+        alert(resp.data?.message || 'Sign up failed');
+      }
+    });
   };
 
   return (

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Link } from "react-router-dom"; // or wherever your router is
+import { useAuth } from "@/store/auth";
 
 const signInSchema = z.object({
   email: z.string().email({ message: "Invalid email address" }),
@@ -22,6 +23,7 @@ const signInSchema = z.object({
 });
 
 export default function SignIn() {
+  const { signin } = useAuth();
   const form = useForm({
     resolver: zodResolver(signInSchema),
     mode: "onSubmit",
@@ -32,8 +34,15 @@ export default function SignIn() {
   });
 
   const onSubmit = (data) => {
-    console.log("Sign in data:", data);
-    // call your API/auth logic here
+    // call API and set auth context
+    signin({ username: data.email, password: data.password }).then((resp) => {
+      if (resp.ok) {
+        // redirect to app
+        window.location.href = '/app';
+      } else {
+        alert(resp.data?.message || 'Sign in failed');
+      }
+    });
   };
 
   return (
@@ -85,7 +94,7 @@ export default function SignIn() {
                 </FormItem>
               )}
             />
-
+{/* 
             <div className="text-right">
               <Link
                 to="/forgot-password"
@@ -93,7 +102,7 @@ export default function SignIn() {
               >
                 Forgot Password?
               </Link>
-            </div>
+            </div> */}
 
             <div className="text-center">
               <Button className="w-full sm:w-1/2 min-w-40" type="submit">
