@@ -40,8 +40,8 @@ uvicorn>=0.30.0
 python-multipart>=0.0.9   # FastAPI file uploads
 slowapi>=0.1.9            # rate limiting
 
-# ── HuggingFace fallback (optional, remove if only using Groq) ─
-# huggingface-hub>=0.23.0
+# ── HuggingFace inference client ─────────────────────────────────
+huggingface-hub>=0.23.0
 
 # ── UI ────────────────────────────────────────────────────────
 gradio>=4.40.0

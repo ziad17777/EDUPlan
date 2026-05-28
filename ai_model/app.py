@@ -2,6 +2,8 @@ import gradio as gr
 import os
 import re
 import hashlib
+import logging
+import threading
 import sqlite3
 import json
 import uuid
@@ -11,6 +13,8 @@ import zipfile
 from pathlib import Path
 from datetime import datetime
 from typing import Generator, Optional
+
+logger = logging.getLogger(__name__)
 
 # ─── Core ML / RAG ─────────────────────────────────────────────────────────────
 from huggingface_hub import InferenceClient
@@ -40,13 +44,6 @@ try:
 except ImportError:
     PANDAS_AVAILABLE = False
 
-try:
-    import pytesseract
-    from pdf2image import convert_from_path
-    from PIL import Image, ImageDraw, ImageFont
-    OCR_AVAILABLE = True
-except ImportError:
-    OCR_AVAILABLE = False
 # Pillow alone (needed for slide images — no OCR required)
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -97,16 +94,7 @@ try:
     from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
     MOVIEPY_AVAILABLE = True
 except Exception:
-    try:
-        import subprocess
-        subprocess.run(
-            ["pip", "install", "moviepy==1.0.3", "decorator<5.0", "--quiet", "--no-warn-script-location"],
-            check=True, capture_output=True
-        )
-        from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
-        MOVIEPY_AVAILABLE = True
-    except Exception as _e:
-        MOVIEPY_AVAILABLE = False
+    MOVIEPY_AVAILABLE = False
  
 # ==============================================================================
 # ⚙️  CONFIGURATION
@@ -116,22 +104,52 @@ REPO_ID      = "meta-llama/Llama-3.3-70B-Instruct"
 EMBED_MODEL  = "sentence-transformers/all-MiniLM-L6-v2"
 RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
-DATA_DIR     = Path("/data")
+def resolve_data_dir() -> Path:
+    env_data_dir = os.getenv("AI_MODEL_DATA_DIR") or os.getenv("PHOENIX_DATA_DIR") or "/data"
+    requested = Path(env_data_dir).expanduser()
+    try:
+        requested.mkdir(parents=True, exist_ok=True)
+        return requested
+    except Exception:
+        fallback = Path.cwd() / ".phoenix_data"
+        try:
+            fallback.mkdir(parents=True, exist_ok=True)
+            logger.warning(
+                "Could not access data dir '%s'. Using fallback '%s'.",
+                requested,
+                fallback,
+                exc_info=True,
+            )
+            return fallback
+        except Exception as fallback_error:
+            raise RuntimeError(
+                f"Could not initialize data directory. Tried '{requested}' and fallback '{fallback}'."
+            ) from fallback_error
+
+DATA_DIR     = resolve_data_dir()
 DB_PATH      = str(DATA_DIR / "phoenix_history.db")
 
 MAX_HISTORY_TURNS = 12
 MAX_CONTEXT_CHARS = 6500
 SUMMARY_EVERY_N_ASSISTANT_TURNS = 6
 
-HF_TOKEN = os.getenv("HF_TOKEN")
-if not HF_TOKEN:
-    raise ValueError("❌ HF_TOKEN missing!")
+HF_TOKEN = os.getenv("HF_TOKEN", "").strip()
 
 # The key/region go as the DEFAULT, not as the var name
 AZURE_SPEECH_KEY    = os.getenv("AZURE_SPEECH_KEY",    "??")
 AZURE_SPEECH_REGION = os.getenv("AZURE_SPEECH_REGION", "francecentral")
 
-client = InferenceClient(model=REPO_ID, token=HF_TOKEN)
+_client = None
+_client_lock = threading.Lock()
+def get_inference_client():
+    global _client
+    if _client is None:
+        with _client_lock:
+            if _client is None:
+                if not HF_TOKEN:
+                    raise ValueError("🔑 HF_TOKEN missing. Set it in environment variables to enable chat features.")
+                _client = InferenceClient(model=REPO_ID, token=HF_TOKEN)
+    return _client
 
 _embeddings = None
 def get_embeddings():
@@ -737,7 +755,7 @@ def rewrite_query(question: str, lang: str) -> str:
             f"Output only the query, no preamble:\n{question}"
         )
     try:
-        resp = client.chat_completion(
+        resp = get_inference_client().chat_completion(
             [{"role": "user", "content": prompt}],
             max_tokens=80, temperature=0.2,
         )
@@ -763,7 +781,7 @@ def update_summary_if_needed(session_id: str):
         "NEW SUMMARY (max 120 words):"
     )
     try:
-        resp = client.chat_completion(
+        resp = get_inference_client().chat_completion(
             [{"role": "user", "content": prompt}],
             max_tokens=200, temperature=0.2,
         )
@@ -980,7 +998,7 @@ def chat_logic(message: str, history: list, username: str) -> Generator[str, Non
     buffer      = ""
     final_reply = ""
     try:
-        stream = client.chat_completion(
+        stream = get_inference_client().chat_completion(
             messages,
             max_tokens=1800,
             stream=True,
@@ -1005,7 +1023,10 @@ def chat_logic(message: str, history: list, username: str) -> Generator[str, Non
         final_reply = partial
     except Exception as e:
         err = str(e)
-        if "410" in err or "deprecated" in err.lower():
+        err_lower = err.lower()
+        if "hf_token" in err_lower and "missing" in err_lower:
+            final_reply = "🔑 HF_TOKEN is missing. Add it to environment variables and retry."
+        elif "410" in err or "deprecated" in err_lower:
             final_reply = "🔴 Model unavailable. Check REPO_ID."
         elif "503" in err:
             final_reply = "🟡 Server loading — please wait 60 s and retry."
@@ -1382,7 +1403,7 @@ def build_script_from_docs(username: str, user_text: str, lang: str) -> str:
         )
 
     try:
-        resp = client.chat_completion(
+        resp = get_inference_client().chat_completion(
             [{"role": "user", "content": prompt}],
             max_tokens=600,
             temperature=0.3,
