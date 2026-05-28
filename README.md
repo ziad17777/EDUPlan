@@ -124,7 +124,7 @@ Content-Type: application/json
 ### Example: Upload File
 ```http
 POST /api/files/
-Authorization: Access token (JWT)
+Authorization: ******
 Content-Type: multipart/form-data
 
 file=<your_file.pdf>
