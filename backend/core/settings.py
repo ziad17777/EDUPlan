@@ -4,6 +4,26 @@ from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+def _env_int(name, default):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_float(name, default):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-change-this-in-production-use-env-variable')
 
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
@@ -116,7 +136,19 @@ SIMPLE_JWT = {
 CORS_ALLOW_ALL_ORIGINS = True  # Lock down in production
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Azure OpenAI Configuration
+# AI Provider Configuration
+# Supports:
+#   - azure       (default)
+#   - huggingface
+#
+# Shared tuning options:
+#   AI_PROVIDER                  defaults to "azure"
+#   AI_SYSTEM_PROMPT             overrides assistant instruction/preferences
+#   AI_TEMPERATURE               defaults to 0.7
+#   AI_MAX_TOKENS                defaults to 1024
+#   AI_REQUEST_TIMEOUT_SECONDS   defaults to 60
+#
+# Azure OpenAI:
 # Set these in your .env file or shell environment — never hard-code keys.
 #
 # Required:
@@ -126,11 +158,42 @@ CORS_ALLOW_ALL_ORIGINS = True  # Lock down in production
 #
 # Optional:
 #   AZURE_OPENAI_API_VERSION   defaults to 2024-02-01
+#
+# Hugging Face:
+#   HUGGINGFACE_API_KEY        your Hugging Face token
+#   HUGGINGFACE_MODEL          defaults to meta-llama/Llama-3.3-70B-Instruct
+#   HUGGINGFACE_API_URL        optional override, defaults to
+#                              https://api-inference.huggingface.co/models/<model>
 # ─────────────────────────────────────────────────────────────────────────────
+AI_PROVIDER = os.getenv('AI_PROVIDER', 'azure').lower()
+AI_SYSTEM_PROMPT = os.getenv(
+    'AI_SYSTEM_PROMPT',
+    (
+        "You are Phoenix, an AI study assistant inside EDUPlan.\n"
+        "You help students with:\n"
+        "- Creating personalised study plans (daily / weekly)\n"
+        "- Breaking topics into clear learning steps\n"
+        "- Explaining difficult concepts simply\n"
+        "- Answering questions about uploaded course materials\n\n"
+        "Be concise, encouraging, and academically accurate.\n"
+        "If a document was uploaded, refer to it when answering relevant questions."
+    ),
+)
+AI_TEMPERATURE = _env_float('AI_TEMPERATURE', 0.7)
+AI_MAX_TOKENS = _env_int('AI_MAX_TOKENS', 1024)
+AI_REQUEST_TIMEOUT_SECONDS = _env_int('AI_REQUEST_TIMEOUT_SECONDS', 60)
+
 AZURE_OPENAI_ENDPOINT    = os.getenv('AZURE_OPENAI_ENDPOINT', '')
 AZURE_OPENAI_API_KEY     = os.getenv('AZURE_OPENAI_API_KEY', '')
 AZURE_OPENAI_DEPLOYMENT  = os.getenv('AZURE_OPENAI_DEPLOYMENT', 'gpt-4o')
 AZURE_OPENAI_API_VERSION = os.getenv('AZURE_OPENAI_API_VERSION', '2024-02-01')
+
+HUGGINGFACE_API_KEY = os.getenv('HUGGINGFACE_API_KEY', '')
+HUGGINGFACE_MODEL = os.getenv('HUGGINGFACE_MODEL', 'meta-llama/Llama-3.3-70B-Instruct')
+HUGGINGFACE_API_URL = os.getenv(
+    'HUGGINGFACE_API_URL',
+    f'https://api-inference.huggingface.co/models/{HUGGINGFACE_MODEL}',
+)
 
 # --- File Upload Config ---
 MAX_UPLOAD_SIZE_MB = 20

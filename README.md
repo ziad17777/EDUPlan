@@ -84,6 +84,17 @@ python manage.py runserver
 
 Backend base URL: `http://127.0.0.1:8000`
 
+### AI provider setup (Azure OpenAI or Hugging Face Llama 3.3)
+In `backend/`, copy `.env.example` to `.env` and set your provider variables:
+- `AI_PROVIDER=azure` (default) or `AI_PROVIDER=huggingface`
+- For Hugging Face Llama 3.3, set:
+  - `HUGGINGFACE_API_KEY`
+  - `HUGGINGFACE_MODEL=meta-llama/Llama-3.3-70B-Instruct`
+- Optional preference tuning:
+  - `AI_SYSTEM_PROMPT` (custom assistant behavior)
+  - `AI_TEMPERATURE`
+  - `AI_MAX_TOKENS`
+
 ### 3) Run the frontend (React)
 Open a new terminal:
 ```bash

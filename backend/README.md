@@ -15,6 +15,19 @@ A complete Django REST Framework backend for an AI-powered file processing and c
 
 ---
 
+## AI Provider Configuration
+
+The chat integration supports:
+- `AI_PROVIDER=azure` (default)
+- `AI_PROVIDER=huggingface` (for models like `meta-llama/Llama-3.3-70B-Instruct`)
+
+Set values in `.env` (copy from `.env.example`):
+- Shared preferences: `AI_SYSTEM_PROMPT`, `AI_TEMPERATURE`, `AI_MAX_TOKENS`
+- Azure: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT`
+- Hugging Face: `HUGGINGFACE_API_KEY`, `HUGGINGFACE_MODEL` (optional `HUGGINGFACE_API_URL`)
+
+---
+
 ## How to run
 
 ```bash

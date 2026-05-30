@@ -1,18 +1,12 @@
 """
-ai_client.py — Direct Azure OpenAI integration for EDUPlan.
+ai_client.py — AI provider integration for EDUPlan.
 
-Replaces the old Gradio/HuggingFace HTTP proxy with the official Azure OpenAI
-Python SDK. Every function keeps the same signature so chat/views.py and
-files/views.py need zero changes.
-
-Required environment variables (set in .env or shell):
-    AZURE_OPENAI_ENDPOINT       e.g. https://my-resource.openai.azure.com/
-    AZURE_OPENAI_API_KEY        your Azure OpenAI API key
-    AZURE_OPENAI_DEPLOYMENT     your deployment name, e.g. "gpt-4o"
-    AZURE_OPENAI_API_VERSION    e.g. "2024-02-01"  (optional, has default)
+Supports Azure OpenAI and Hugging Face (Llama 3.3-compatible) behind one
+stable API used by chat/views.py and files/views.py.
 """
 
 import logging
+import requests
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -56,16 +50,101 @@ class AIServiceError(RuntimeError):
     pass
 
 
-# ── System prompt ────────────────────────────────────────────────────────────
-_SYSTEM_PROMPT = """You are Phoenix, an AI study assistant inside EDUPlan.
-You help students with:
-- Creating personalised study plans (daily / weekly)
-- Breaking topics into clear learning steps
-- Explaining difficult concepts simply
-- Answering questions about uploaded course materials
+def _get_provider() -> str:
+    return getattr(settings, "AI_PROVIDER", "azure").strip().lower()
 
-Be concise, encouraging, and academically accurate.
-If a document was uploaded, refer to it when answering relevant questions."""
+
+def _get_system_prompt() -> str:
+    return getattr(settings, "AI_SYSTEM_PROMPT", "").strip()
+
+
+def _build_hf_prompt(message: str, history: list[dict[str, str]]) -> str:
+    system_prompt = _get_system_prompt()
+    sections = []
+    if system_prompt:
+        sections.append(f"System:\n{system_prompt}")
+    for item in history:
+        role = item.get("role", "")
+        content = item.get("content", "")
+        if not content:
+            continue
+        speaker = "Assistant" if role == "assistant" else "User"
+        sections.append(f"{speaker}:\n{content}")
+    sections.append(f"User:\n{message}\nAssistant:")
+    return "\n\n".join(sections)
+
+
+def _send_via_azure(message: str, history: list[dict[str, str]]) -> dict:
+    client = _get_client()
+    deployment = getattr(settings, "AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+    messages = [{"role": "system", "content": _get_system_prompt()}]
+    messages.extend(history)
+    messages.append({"role": "user", "content": message})
+
+    try:
+        response = client.chat.completions.create(
+            model=deployment,
+            messages=messages,
+            temperature=getattr(settings, "AI_TEMPERATURE", 0.7),
+            max_tokens=getattr(settings, "AI_MAX_TOKENS", 1024),
+        )
+    except Exception as exc:
+        logger.exception("Azure OpenAI chat request failed: %s", exc)
+        raise AIServiceError(f"Azure OpenAI error: {exc}") from exc
+
+    reply = response.choices[0].message.content
+    return {"reply": reply}
+
+
+def _send_via_huggingface(message: str, history: list[dict[str, str]]) -> dict:
+    api_key = getattr(settings, "HUGGINGFACE_API_KEY", "")
+    model = getattr(settings, "HUGGINGFACE_MODEL", "")
+    endpoint = getattr(settings, "HUGGINGFACE_API_URL", "")
+    if not api_key:
+        raise AIServiceError("HUGGINGFACE_API_KEY must be set for Hugging Face provider.")
+    if not model:
+        raise AIServiceError("HUGGINGFACE_MODEL must be set for Hugging Face provider.")
+    if not endpoint:
+        raise AIServiceError("HUGGINGFACE_API_URL must be set for Hugging Face provider.")
+
+    payload = {
+        "inputs": _build_hf_prompt(message=message, history=history),
+        "parameters": {
+            "max_new_tokens": getattr(settings, "AI_MAX_TOKENS", 1024),
+            "temperature": getattr(settings, "AI_TEMPERATURE", 0.7),
+            "return_full_text": False,
+        },
+    }
+    timeout = getattr(settings, "AI_REQUEST_TIMEOUT_SECONDS", 60)
+    headers = {
+        "Authorization": "Bearer " + api_key,
+        "Content-Type": "application/json",
+    }
+
+    try:
+        response = requests.post(
+            endpoint,
+            headers=headers,
+            json=payload,
+            timeout=timeout,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        logger.exception("Hugging Face chat request failed: %s", exc)
+        raise AIServiceError(f"Hugging Face error: {exc}") from exc
+
+    data = response.json()
+    reply = None
+    if isinstance(data, list) and data:
+        reply = data[0].get("generated_text")
+    elif isinstance(data, dict):
+        reply = data.get("generated_text")
+        if not reply and data.get("error"):
+            raise AIServiceError(f"Hugging Face error: {data.get('error')}")
+
+    if not reply:
+        raise AIServiceError("Hugging Face returned no generated_text.")
+    return {"reply": reply.strip()}
 
 
 # ── Public API (same signatures as the old Gradio proxy) ────────────────────
@@ -82,26 +161,12 @@ def send_chat_message(
     `history` is a list of {'role': 'user'|'assistant', 'content': '...'}
     dicts representing the conversation so far (excluding the current message).
     """
-    client = _get_client()
-    deployment = getattr(settings, "AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
-
-    messages = [{"role": "system", "content": _SYSTEM_PROMPT}]
-    messages.extend(history)
-    messages.append({"role": "user", "content": message})
-
-    try:
-        response = client.chat.completions.create(
-            model=deployment,
-            messages=messages,
-            temperature=0.7,
-            max_tokens=1024,
-        )
-    except Exception as exc:
-        logger.exception("Azure OpenAI chat request failed: %s", exc)
-        raise AIServiceError(f"Azure OpenAI error: {exc}") from exc
-
-    reply = response.choices[0].message.content
-    return {"reply": reply}
+    provider = _get_provider()
+    if provider == "azure":
+        return _send_via_azure(message=message, history=history)
+    if provider == "huggingface":
+        return _send_via_huggingface(message=message, history=history)
+    raise AIServiceError(f"Unsupported AI_PROVIDER '{provider}'. Use 'azure' or 'huggingface'.")
 
 
 def upload_file(
@@ -127,20 +192,34 @@ def upload_file(
 
 
 def health_check() -> dict:
-    """Verify the Azure OpenAI connection is reachable."""
-    client = _get_client()
-    deployment = getattr(settings, "AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
-    try:
-        response = client.chat.completions.create(
-            model=deployment,
-            messages=[{"role": "user", "content": "ping"}],
-            max_tokens=5,
-        )
+    """Verify the configured AI provider connection is reachable."""
+    provider = _get_provider()
+    if provider == "azure":
+        client = _get_client()
+        deployment = getattr(settings, "AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+        try:
+            response = client.chat.completions.create(
+                model=deployment,
+                messages=[{"role": "user", "content": "ping"}],
+                max_tokens=5,
+            )
+            return {
+                "status": "ok",
+                "provider": "azure",
+                "model": response.model,
+                "deployment": deployment,
+            }
+        except Exception as exc:
+            logger.exception("Azure OpenAI health check failed: %s", exc)
+            raise AIServiceError(str(exc)) from exc
+
+    if provider == "huggingface":
+        model = getattr(settings, "HUGGINGFACE_MODEL", "")
+        _send_via_huggingface(message="ping", history=[])
         return {
             "status": "ok",
-            "model": response.model,
-            "deployment": deployment,
+            "provider": "huggingface",
+            "model": model,
         }
-    except Exception as exc:
-        logger.exception("Azure OpenAI health check failed: %s", exc)
-        raise AIServiceError(str(exc)) from exc
+
+    raise AIServiceError(f"Unsupported AI_PROVIDER '{provider}'.")
