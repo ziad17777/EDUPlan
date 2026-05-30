@@ -36,7 +36,7 @@ def _request(method: str, path: str, **kwargs):
     except requests.RequestException as exc:
         raise AIServiceError(str(exc)) from exc
     if response.status_code >= 400:
-        raise AIServiceError(f"{response.status_code}: {response.text}")
+        raise AIServiceError(f"AI service error ({response.status_code})")
     if response.content:
         try:
             return response.json()

@@ -20,6 +20,7 @@ from core.ai_client import (
 logger = logging.getLogger(__name__)
 
 def build_ai_history(session, exclude_message_id=None):
+    """Builds AI-ready history from session messages, excluding files and an optional message."""
     history = []
     messages = session.messages.order_by('created_at')
     for msg in messages:

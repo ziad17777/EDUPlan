@@ -165,19 +165,20 @@ def get_or_create_session_id(username: str, session_id: Optional[str] = None) ->
         USER_ACTIVE_SESSIONS[uname] = create_session(name=f"{uname or 'Session'}")
     return USER_ACTIVE_SESSIONS[uname]
 
-def _context_key(username: str, session_id: Optional[str]) -> str:
+def _context_key(username: str, session_id: str) -> str:
     uname = sanitize_username(username)
-    sid = get_or_create_session_id(username, session_id)
-    return f"{uname}:{sid}"
+    return f"{uname}:{session_id}"
 
 def get_user_context(username: str, session_id: Optional[str] = None) -> dict:
-    key = _context_key(username, session_id)
+    sid = get_or_create_session_id(username, session_id)
+    key = _context_key(username, sid)
     if key not in USER_CONTEXTS:
         USER_CONTEXTS[key] = {"doc_store": {}, "active_docs": [], "doc_hashes": set()}
     return USER_CONTEXTS[key]
 
 def clear_user_context(username: str, session_id: Optional[str] = None):
-    key = _context_key(username, session_id)
+    sid = get_or_create_session_id(username, session_id)
+    key = _context_key(username, sid)
     USER_CONTEXTS[key] = {"doc_store": {}, "active_docs": [], "doc_hashes": set()}
 
 # ==============================================================================
@@ -602,7 +603,8 @@ def file_hash(path: str) -> str:
 
 def store_user_upload(file_path: str, username: str, session_id: Optional[str] = None):
     user_root = ensure_user_dirs(username, session_id=session_id)
-    uploads_dir = user_root / "uploads" / (session_id or FALLBACK_SESSION_DIR)
+    target_session = session_id if session_id else FALLBACK_SESSION_DIR
+    uploads_dir = user_root / "uploads" / target_session
     uploads_dir.mkdir(parents=True, exist_ok=True)
     target = uploads_dir / Path(file_path).name
     try:
@@ -1955,7 +1957,7 @@ demo = build_ui()
 if FASTAPI_AVAILABLE:
     app = FastAPI()
 
-    def require_internal_token(
+    def check_internal_token(
         x_internal_token: Optional[str] = Header(None),
         authorization: Optional[str] = Header(None, alias="Authorization"),
     ):
@@ -1970,17 +1972,17 @@ if FASTAPI_AVAILABLE:
             raise HTTPException(status_code=403, detail="Invalid internal token.")
 
     @app.get("/api/health")
-    def api_health(_=Depends(require_internal_token)):
+    def api_health(_=Depends(check_internal_token)):
         return {"status": "ok"}
 
     @app.post("/api/chat")
-    def api_chat(payload: dict = Body(...), _=Depends(require_internal_token)):
+    def api_chat(payload: dict = Body(...), _=Depends(check_internal_token)):
         session_id = payload.get("session_id", "")
         username = payload.get("username", "")
         message  = payload.get("message", "")
         history  = payload.get("history", [])
         if not session_id:
-            raise HTTPException(status_code=400, detail="session_id is required")
+            raise HTTPException(status_code=400, detail="Field 'session_id' is required")
         final    = ""
         for chunk in chat_logic(message, history, username, session_id=session_id):
             final = chunk
@@ -1991,10 +1993,10 @@ if FASTAPI_AVAILABLE:
         files: list[UploadFile] = File(...),
         username: Optional[str] = Form(None),
         session_id: Optional[str] = Form(None),
-        _=Depends(require_internal_token),
+        _=Depends(check_internal_token),
     ):
         if not session_id or not username:
-            raise HTTPException(status_code=400, detail="session_id and username are required")
+            raise HTTPException(status_code=400, detail="Fields 'session_id' and 'username' are required")
         paths = []
         for f in files:
             suffix = Path(f.filename).suffix
