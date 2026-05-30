@@ -183,12 +183,15 @@ class AttachFileToChatView(APIView):
             ai_error = "AI service upload failed."
 
         serializer = ChatMessageSerializer(message, context={'request': request})
-        return Response({
+        response_data = {
             'message': 'File attached to chat session.',
             'chat_message': serializer.data,
-            'ai_status': ai_status,
-            **({'ai_error': ai_error} if ai_error else {})
-        }, status=status.HTTP_201_CREATED)
+        }
+        if ai_status:
+            response_data['ai_status'] = ai_status
+        if ai_error:
+            response_data['ai_error'] = ai_error
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -296,14 +299,6 @@ class SendMessageView(APIView):
                 'ai_error': 'AI service unavailable.',
             }, status=status.HTTP_502_BAD_GATEWAY)
 
-        if 'reply' not in ai_payload:
-            return Response({
-                'session_id': str(session.id),
-                'session_created': session_created,
-                'message': msg_serializer.data,
-                'ai_status': 'error',
-                'ai_error': 'AI service returned no reply.',
-            }, status=status.HTTP_502_BAD_GATEWAY)
         ai_reply = ai_payload.get('reply')
         if ai_reply is None:
             return Response({

@@ -74,7 +74,7 @@ except ImportError:
     RERANKER_AVAILABLE = False
 
 try:
-    from fastapi import FastAPI, UploadFile, File, Body, Form, Request, Header, HTTPException, Depends
+    from fastapi import FastAPI, UploadFile, File, Body, Form, Header, HTTPException, Depends
     FASTAPI_AVAILABLE = True
 except Exception:
     FASTAPI_AVAILABLE = False
@@ -118,6 +118,7 @@ RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 DATA_DIR     = Path("/data")
 DB_PATH      = str(DATA_DIR / "phoenix_history.db")
+DEFAULT_SESSION_DIR = "shared"
 
 MAX_HISTORY_TURNS = 12
 MAX_CONTEXT_CHARS = 6500
@@ -131,6 +132,8 @@ if not HF_TOKEN:
 AZURE_SPEECH_KEY    = os.getenv("AZURE_SPEECH_KEY",    "??")
 AZURE_SPEECH_REGION = os.getenv("AZURE_SPEECH_REGION", "francecentral")
 AI_SERVICE_TOKEN    = os.getenv("AI_SERVICE_TOKEN", "")
+if not AI_SERVICE_TOKEN:
+    print("⚠️ AI_SERVICE_TOKEN not set; internal API auth is disabled.")
 
 client = InferenceClient(model=REPO_ID, token=HF_TOKEN)
 
@@ -599,7 +602,7 @@ def file_hash(path: str) -> str:
 
 def store_user_upload(file_path: str, username: str, session_id: Optional[str] = None):
     user_root = ensure_user_dirs(username, session_id=session_id)
-    uploads_dir = user_root / "uploads" / (session_id or "shared")
+    uploads_dir = user_root / "uploads" / (session_id or DEFAULT_SESSION_DIR)
     uploads_dir.mkdir(parents=True, exist_ok=True)
     target = uploads_dir / Path(file_path).name
     try:
@@ -1985,16 +1988,11 @@ if FASTAPI_AVAILABLE:
 
     @app.post("/api/upload")
     async def api_upload(
-        request: Request,
         files: list[UploadFile] = File(...),
         username: Optional[str] = Form(None),
         session_id: Optional[str] = Form(None),
         _=Depends(require_internal_token),
     ):
-        if not username:
-            username = request.query_params.get("username", "")
-        if not session_id:
-            session_id = request.query_params.get("session_id", "")
         if not session_id or not username:
             raise HTTPException(status_code=400, detail="session_id and username are required.")
         paths = []
