@@ -1,4 +1,6 @@
 import logging
+from typing import Optional
+from uuid import UUID
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -19,7 +21,7 @@ from core.ai_client import (
 
 logger = logging.getLogger(__name__)
 
-def build_ai_history(session, exclude_message_id=None):
+def build_ai_history(session: ChatSession, exclude_message_id: Optional[UUID] = None) -> list[dict[str, str]]:
     """Builds AI-ready history from session messages, excluding files and an optional message."""
     history = []
     messages = session.messages.order_by('created_at')

@@ -1,5 +1,6 @@
 import gradio as gr
 import os
+import secrets
 import re
 import hashlib
 import sqlite3
@@ -1968,7 +1969,7 @@ if FASTAPI_AVAILABLE:
             parts = authorization.split(" ", 1)
             if len(parts) == 2 and parts[0].lower() == "bearer":
                 token = parts[1]
-        if token != AI_SERVICE_TOKEN:
+        if not token or not secrets.compare_digest(token, AI_SERVICE_TOKEN):
             raise HTTPException(status_code=403, detail="Invalid internal token.")
 
     @app.get("/api/health")
@@ -1981,8 +1982,8 @@ if FASTAPI_AVAILABLE:
         username = payload.get("username", "")
         message  = payload.get("message", "")
         history  = payload.get("history", [])
-        if not session_id:
-            raise HTTPException(status_code=400, detail="Field 'session_id' is required")
+        if not session_id or not username:
+            raise HTTPException(status_code=400, detail="Fields 'session_id' and 'username' are required")
         final    = ""
         for chunk in chat_logic(message, history, username, session_id=session_id):
             final = chunk
