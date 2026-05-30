@@ -4,9 +4,9 @@ from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'django-insecure-change-this-in-production-use-env-variable'
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-change-this-in-production-use-env-variable')
 
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = ['*']
 
@@ -115,10 +115,22 @@ SIMPLE_JWT = {
 # --- CORS ---
 CORS_ALLOW_ALL_ORIGINS = True  # Lock down in production
 
-# --- AI Service ---
-AI_SERVICE_BASE_URL = os.getenv("AI_SERVICE_BASE_URL", "http://127.0.0.1:7860")
-AI_SERVICE_TOKEN = os.getenv("AI_SERVICE_TOKEN", "")
-AI_SERVICE_TIMEOUT = int(os.getenv("AI_SERVICE_TIMEOUT", "60"))
+# ─────────────────────────────────────────────────────────────────────────────
+# Azure OpenAI Configuration
+# Set these in your .env file or shell environment — never hard-code keys.
+#
+# Required:
+#   AZURE_OPENAI_ENDPOINT      e.g. https://my-resource.openai.azure.com/
+#   AZURE_OPENAI_API_KEY       your Azure OpenAI key
+#   AZURE_OPENAI_DEPLOYMENT    your deployment name, e.g. gpt-4o
+#
+# Optional:
+#   AZURE_OPENAI_API_VERSION   defaults to 2024-02-01
+# ─────────────────────────────────────────────────────────────────────────────
+AZURE_OPENAI_ENDPOINT    = os.getenv('AZURE_OPENAI_ENDPOINT', '')
+AZURE_OPENAI_API_KEY     = os.getenv('AZURE_OPENAI_API_KEY', '')
+AZURE_OPENAI_DEPLOYMENT  = os.getenv('AZURE_OPENAI_DEPLOYMENT', 'gpt-4o')
+AZURE_OPENAI_API_VERSION = os.getenv('AZURE_OPENAI_API_VERSION', '2024-02-01')
 
 # --- File Upload Config ---
 MAX_UPLOAD_SIZE_MB = 20
