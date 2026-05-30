@@ -45,7 +45,7 @@ def _request(method: str, path: str, **kwargs):
     return {}
 
 
-def send_chat_message(session_id: str, username: str, message: str, history: list):
+def send_chat_message(session_id: str, username: str, message: str, history: list[dict[str, str]]):
     payload = {
         "session_id": str(session_id),
         "username": username,

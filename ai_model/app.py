@@ -1954,7 +1954,7 @@ if FASTAPI_AVAILABLE:
 
     def require_internal_token(
         x_internal_token: Optional[str] = Header(None),
-        authorization: Optional[str] = Header(None),
+        authorization: Optional[str] = Header(None, alias="Authorization"),
     ):
         if not AI_SERVICE_TOKEN:
             return

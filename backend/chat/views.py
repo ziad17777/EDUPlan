@@ -167,7 +167,7 @@ class AttachFileToChatView(APIView):
         )
         session.update_activity()
 
-        ai_status = "indexed"
+        ai_status = None
         ai_error = None
         try:
             upload_file_to_ai(
@@ -177,9 +177,10 @@ class AttachFileToChatView(APIView):
                 filename=uploaded_file.original_filename,
                 content_type=uploaded_file.mime_type,
             )
-        except AIServiceError as exc:
+            ai_status = "indexed"
+        except AIServiceError:
             ai_status = "error"
-            ai_error = str(exc)
+            ai_error = "AI service upload failed."
 
         serializer = ChatMessageSerializer(message, context={'request': request})
         return Response({
@@ -269,13 +270,13 @@ class SendMessageView(APIView):
                     filename=attached_file.original_filename,
                     content_type=attached_file.mime_type,
                 )
-            except AIServiceError as exc:
+            except AIServiceError:
                 return Response({
                     'session_id': str(session.id),
                     'session_created': session_created,
                     'message': msg_serializer.data,
                     'ai_status': 'error',
-                    'ai_error': str(exc),
+                    'ai_error': 'AI file upload failed.',
                 }, status=status.HTTP_502_BAD_GATEWAY)
 
         history = build_ai_history(session, exclude_message_id=message.id)
@@ -286,23 +287,31 @@ class SendMessageView(APIView):
                 message=message.content,
                 history=history,
             )
-        except AIServiceError as exc:
+        except AIServiceError:
             return Response({
                 'session_id': str(session.id),
                 'session_created': session_created,
                 'message': msg_serializer.data,
                 'ai_status': 'error',
-                'ai_error': str(exc),
+                'ai_error': 'AI service unavailable.',
             }, status=status.HTTP_502_BAD_GATEWAY)
 
-        ai_reply = ai_payload.get('reply', '')
-        if not ai_reply:
+        if 'reply' not in ai_payload:
             return Response({
                 'session_id': str(session.id),
                 'session_created': session_created,
                 'message': msg_serializer.data,
                 'ai_status': 'error',
-                'ai_error': 'AI service returned an empty reply.',
+                'ai_error': 'AI service returned no reply.',
+            }, status=status.HTTP_502_BAD_GATEWAY)
+        ai_reply = ai_payload.get('reply')
+        if ai_reply is None:
+            return Response({
+                'session_id': str(session.id),
+                'session_created': session_created,
+                'message': msg_serializer.data,
+                'ai_status': 'error',
+                'ai_error': 'AI service returned no reply.',
             }, status=status.HTTP_502_BAD_GATEWAY)
 
         ai_message = ChatMessage.objects.create(
@@ -377,9 +386,9 @@ class AIHealthProxyView(APIView):
     def get(self, request):
         try:
             data = health_check()
-        except AIServiceError as exc:
+        except AIServiceError:
             return Response(
-                {'status': 'error', 'detail': str(exc)},
+                {'status': 'error', 'detail': 'AI service unavailable.'},
                 status=status.HTTP_502_BAD_GATEWAY
             )
         return Response(data, status=status.HTTP_200_OK)

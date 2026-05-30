@@ -62,9 +62,9 @@ class UploadFileView(APIView):
                     content_type=uploaded_file.mime_type,
                 )
                 ai_status = 'indexed'
-            except AIServiceError as exc:
+            except AIServiceError:
                 ai_status = 'error'
-                ai_error = str(exc)
+                ai_error = 'AI service upload failed.'
 
         serializer = UploadedFileSerializer(uploaded_file, context={'request': request})
         return Response({
@@ -161,11 +161,11 @@ class SendFileToAIView(APIView):
                 filename=file.original_filename,
                 content_type=file.mime_type,
             )
-        except AIServiceError as exc:
+        except AIServiceError:
             file.status = 'failed'
             file.save(update_fields=['status'])
             return Response(
-                {'error': 'AI upload failed.', 'detail': str(exc)},
+                {'error': 'AI upload failed.'},
                 status=status.HTTP_502_BAD_GATEWAY
             )
 
