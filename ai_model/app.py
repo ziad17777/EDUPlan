@@ -118,7 +118,7 @@ RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 DATA_DIR     = Path("/data")
 DB_PATH      = str(DATA_DIR / "phoenix_history.db")
-DEFAULT_SESSION_DIR = "shared"
+FALLBACK_SESSION_DIR = "shared"
 
 MAX_HISTORY_TURNS = 12
 MAX_CONTEXT_CHARS = 6500
@@ -602,7 +602,7 @@ def file_hash(path: str) -> str:
 
 def store_user_upload(file_path: str, username: str, session_id: Optional[str] = None):
     user_root = ensure_user_dirs(username, session_id=session_id)
-    uploads_dir = user_root / "uploads" / (session_id or DEFAULT_SESSION_DIR)
+    uploads_dir = user_root / "uploads" / (session_id or FALLBACK_SESSION_DIR)
     uploads_dir.mkdir(parents=True, exist_ok=True)
     target = uploads_dir / Path(file_path).name
     try:
@@ -1980,7 +1980,7 @@ if FASTAPI_AVAILABLE:
         message  = payload.get("message", "")
         history  = payload.get("history", [])
         if not session_id:
-            raise HTTPException(status_code=400, detail="session_id is required.")
+            raise HTTPException(status_code=400, detail="session_id is required")
         final    = ""
         for chunk in chat_logic(message, history, username, session_id=session_id):
             final = chunk
@@ -1994,7 +1994,7 @@ if FASTAPI_AVAILABLE:
         _=Depends(require_internal_token),
     ):
         if not session_id or not username:
-            raise HTTPException(status_code=400, detail="session_id and username are required.")
+            raise HTTPException(status_code=400, detail="session_id and username are required")
         paths = []
         for f in files:
             suffix = Path(f.filename).suffix

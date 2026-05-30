@@ -1,3 +1,4 @@
+import logging
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -16,6 +17,7 @@ from core.ai_client import (
     health_check,
 )
 
+logger = logging.getLogger(__name__)
 
 def build_ai_history(session, exclude_message_id=None):
     history = []
@@ -179,6 +181,7 @@ class AttachFileToChatView(APIView):
             )
             ai_status = "indexed"
         except AIServiceError:
+            logger.exception("AI upload failed for chat attachment.")
             ai_status = "error"
             ai_error = "AI service upload failed."
 
@@ -274,6 +277,7 @@ class SendMessageView(APIView):
                     content_type=attached_file.mime_type,
                 )
             except AIServiceError:
+                logger.exception("AI upload failed for chat message attachment.")
                 return Response({
                     'session_id': str(session.id),
                     'session_created': session_created,
@@ -291,6 +295,7 @@ class SendMessageView(APIView):
                 history=history,
             )
         except AIServiceError:
+            logger.exception("AI chat request failed.")
             return Response({
                 'session_id': str(session.id),
                 'session_created': session_created,
@@ -382,6 +387,7 @@ class AIHealthProxyView(APIView):
         try:
             data = health_check()
         except AIServiceError:
+            logger.exception("AI health check failed.")
             return Response(
                 {'status': 'error', 'detail': 'AI service unavailable.'},
                 status=status.HTTP_502_BAD_GATEWAY

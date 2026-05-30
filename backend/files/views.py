@@ -1,3 +1,4 @@
+import logging
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.views import APIView
@@ -10,6 +11,8 @@ from .serializers import UploadedFileSerializer, AISummaryWebhookSerializer
 from .validators import validate_uploaded_file, get_mime_type_from_extension
 from chat.models import ChatSession
 from core.ai_client import AIServiceError, upload_file as upload_file_to_ai
+
+logger = logging.getLogger(__name__)
 
 
 class UploadFileView(APIView):
@@ -63,6 +66,7 @@ class UploadFileView(APIView):
                 )
                 ai_status = 'indexed'
             except AIServiceError:
+                logger.exception("AI upload failed for file upload.")
                 ai_status = 'error'
                 ai_error = 'AI service upload failed.'
 
@@ -162,6 +166,7 @@ class SendFileToAIView(APIView):
                 content_type=file.mime_type,
             )
         except AIServiceError:
+            logger.exception("AI upload failed for send-to-ai request.")
             file.status = 'failed'
             file.save(update_fields=['status'])
             return Response(
