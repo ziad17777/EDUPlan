@@ -3,7 +3,7 @@ from .views import (
     ChatSessionListView, CreateChatSessionView,
     ChatSessionDetailView, DeleteChatSessionView,
     ChatHistoryView, AttachFileToChatView,
-    SendMessageView, AIResponseWebhookView
+    SendMessageView, AIResponseWebhookView, AIHealthProxyView
 )
 
 urlpatterns = [
@@ -19,6 +19,7 @@ urlpatterns = [
 
     # Messaging
     path('messages/send/', SendMessageView.as_view(), name='send_message'),
+    path('ai/health/', AIHealthProxyView.as_view(), name='ai_health'),
 
     # AI Integration Webhooks (Placeholders)
     path('sessions/<uuid:session_id>/ai-response/', AIResponseWebhookView.as_view(), name='ai_response_webhook'),

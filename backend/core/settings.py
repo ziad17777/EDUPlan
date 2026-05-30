@@ -115,6 +115,11 @@ SIMPLE_JWT = {
 # --- CORS ---
 CORS_ALLOW_ALL_ORIGINS = True  # Lock down in production
 
+# --- AI Service ---
+AI_SERVICE_BASE_URL = os.getenv("AI_SERVICE_BASE_URL", "http://127.0.0.1:7860")
+AI_SERVICE_TOKEN = os.getenv("AI_SERVICE_TOKEN", "")
+AI_SERVICE_TIMEOUT = int(os.getenv("AI_SERVICE_TIMEOUT", "60"))
+
 # --- File Upload Config ---
 MAX_UPLOAD_SIZE_MB = 20
 MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024

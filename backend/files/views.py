@@ -8,6 +8,8 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from .models import UploadedFile
 from .serializers import UploadedFileSerializer, AISummaryWebhookSerializer
 from .validators import validate_uploaded_file, get_mime_type_from_extension
+from chat.models import ChatSession
+from core.ai_client import AIServiceError, upload_file as upload_file_to_ai
 
 
 class UploadFileView(APIView):
@@ -20,6 +22,14 @@ class UploadFileView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
+        session_id = request.data.get('session_id')
+        session = None
+        if session_id:
+            try:
+                session = ChatSession.objects.get(id=session_id, user=request.user)
+            except ChatSession.DoesNotExist:
+                return Response({'error': 'Session not found.'}, status=status.HTTP_404_NOT_FOUND)
+
         file = request.FILES.get('file')
         if not file:
             return Response({'error': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -40,10 +50,28 @@ class UploadFileView(APIView):
             status='uploaded'
         )
 
+        ai_status = None
+        ai_error = None
+        if session:
+            try:
+                upload_file_to_ai(
+                    session_id=str(session.id),
+                    username=request.user.email,
+                    file_path=uploaded_file.file.path,
+                    filename=uploaded_file.original_filename,
+                    content_type=uploaded_file.mime_type,
+                )
+                ai_status = 'indexed'
+            except AIServiceError as exc:
+                ai_status = 'error'
+                ai_error = str(exc)
+
         serializer = UploadedFileSerializer(uploaded_file, context={'request': request})
         return Response({
             'message': 'File uploaded successfully.',
-            'file': serializer.data
+            'file': serializer.data,
+            **({'ai_status': ai_status} if ai_status else {}),
+            **({'ai_error': ai_error} if ai_error else {})
         }, status=status.HTTP_201_CREATED)
 
 
@@ -114,16 +142,35 @@ class SendFileToAIView(APIView):
         except UploadedFile.DoesNotExist:
             return Response({'error': 'File not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Mark as processing
-        file.status = 'processing'
-        file.save()
+        session_id = request.data.get('session_id')
+        if not session_id:
+            return Response({'error': 'session_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            session = ChatSession.objects.get(id=session_id, user=request.user)
+        except ChatSession.DoesNotExist:
+            return Response({'error': 'Session not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        # TODO (AI Team): Replace with actual AI service call
-        # Example:
-        # ai_service.send_file(file_url=file.file.url, callback_url=f"/api/files/{file_id}/ai-summary/")
+        file.status = 'processing'
+        file.save(update_fields=['status'])
+
+        try:
+            upload_file_to_ai(
+                session_id=str(session.id),
+                username=request.user.email,
+                file_path=file.file.path,
+                filename=file.original_filename,
+                content_type=file.mime_type,
+            )
+        except AIServiceError as exc:
+            file.status = 'failed'
+            file.save(update_fields=['status'])
+            return Response(
+                {'error': 'AI upload failed.', 'detail': str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
 
         return Response({
-            'message': 'File queued for AI processing. [PLACEHOLDER — AI integration pending]',
+            'message': 'File sent to AI processing.',
             'file_id': str(file.id),
             'status': file.status,
         })

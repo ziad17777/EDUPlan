@@ -9,6 +9,32 @@ from .serializers import (
     ChatMessageSerializer, SendMessageSerializer, AIResponseWebhookSerializer
 )
 from files.models import UploadedFile
+from core.ai_client import (
+    AIServiceError,
+    send_chat_message,
+    upload_file as upload_file_to_ai,
+    health_check,
+)
+
+
+def build_ai_history(session, exclude_message_id=None):
+    history = []
+    messages = session.messages.order_by('created_at')
+    for msg in messages:
+        if exclude_message_id and msg.id == exclude_message_id:
+            continue
+        if msg.message_type == 'file':
+            continue
+        if msg.sender == 'user':
+            role = 'user'
+        elif msg.sender == 'ai':
+            role = 'assistant'
+        else:
+            continue
+        if not msg.content:
+            continue
+        history.append({'role': role, 'content': msg.content})
+    return history
 
 
 # ─────────────────────────────────────────────────────────────
@@ -141,10 +167,26 @@ class AttachFileToChatView(APIView):
         )
         session.update_activity()
 
+        ai_status = "indexed"
+        ai_error = None
+        try:
+            upload_file_to_ai(
+                session_id=str(session.id),
+                username=request.user.email,
+                file_path=uploaded_file.file.path,
+                filename=uploaded_file.original_filename,
+                content_type=uploaded_file.mime_type,
+            )
+        except AIServiceError as exc:
+            ai_status = "error"
+            ai_error = str(exc)
+
         serializer = ChatMessageSerializer(message, context={'request': request})
         return Response({
             'message': 'File attached to chat session.',
-            'chat_message': serializer.data
+            'chat_message': serializer.data,
+            'ai_status': ai_status,
+            **({'ai_error': ai_error} if ai_error else {})
         }, status=status.HTTP_201_CREATED)
 
 
@@ -218,15 +260,66 @@ class SendMessageView(APIView):
 
         msg_serializer = ChatMessageSerializer(message, context={'request': request})
 
-        # TODO (AI Team): After storing the user message, forward to AI service:
-        # ai_service.send_message(session_id=session.id, message=message.content, file=attached_file)
-        # AI response will be delivered via POST /api/chat/sessions/<id>/ai-response/
+        if attached_file:
+            try:
+                upload_file_to_ai(
+                    session_id=str(session.id),
+                    username=request.user.email,
+                    file_path=attached_file.file.path,
+                    filename=attached_file.original_filename,
+                    content_type=attached_file.mime_type,
+                )
+            except AIServiceError as exc:
+                return Response({
+                    'session_id': str(session.id),
+                    'session_created': session_created,
+                    'message': msg_serializer.data,
+                    'ai_status': 'error',
+                    'ai_error': str(exc),
+                }, status=status.HTTP_502_BAD_GATEWAY)
+
+        history = build_ai_history(session, exclude_message_id=message.id)
+        try:
+            ai_payload = send_chat_message(
+                session_id=str(session.id),
+                username=request.user.email,
+                message=message.content,
+                history=history,
+            )
+        except AIServiceError as exc:
+            return Response({
+                'session_id': str(session.id),
+                'session_created': session_created,
+                'message': msg_serializer.data,
+                'ai_status': 'error',
+                'ai_error': str(exc),
+            }, status=status.HTTP_502_BAD_GATEWAY)
+
+        ai_reply = ai_payload.get('reply', '')
+        if not ai_reply:
+            return Response({
+                'session_id': str(session.id),
+                'session_created': session_created,
+                'message': msg_serializer.data,
+                'ai_status': 'error',
+                'ai_error': 'AI service returned an empty reply.',
+            }, status=status.HTTP_502_BAD_GATEWAY)
+
+        ai_message = ChatMessage.objects.create(
+            session=session,
+            sender='ai',
+            message_type='ai_response',
+            content=ai_reply,
+        )
+        session.update_activity()
+        ai_serializer = ChatMessageSerializer(ai_message, context={'request': request})
 
         return Response({
             'session_id': str(session.id),
             'session_created': session_created,
             'message': msg_serializer.data,
-            'ai_status': 'pending [AI integration placeholder]'
+            'ai_message': ai_serializer.data,
+            'ai_status': 'ok'
         }, status=status.HTTP_201_CREATED)
 
 
@@ -275,3 +368,18 @@ class AIResponseWebhookView(APIView):
             'message': 'AI response stored in chat history.',
             'ai_message': msg_serializer.data
         }, status=status.HTTP_201_CREATED)
+
+
+class AIHealthProxyView(APIView):
+    """GET /api/chat/ai/health/ — Proxy health check to the AI service."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            data = health_check()
+        except AIServiceError as exc:
+            return Response(
+                {'status': 'error', 'detail': str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+        return Response(data, status=status.HTTP_200_OK)

@@ -74,7 +74,7 @@ except ImportError:
     RERANKER_AVAILABLE = False
 
 try:
-    from fastapi import FastAPI, UploadFile, File, Body
+    from fastapi import FastAPI, UploadFile, File, Body, Form, Request, Header, HTTPException, Depends
     FASTAPI_AVAILABLE = True
 except Exception:
     FASTAPI_AVAILABLE = False
@@ -130,6 +130,7 @@ if not HF_TOKEN:
 # The key/region go as the DEFAULT, not as the var name
 AZURE_SPEECH_KEY    = os.getenv("AZURE_SPEECH_KEY",    "??")
 AZURE_SPEECH_REGION = os.getenv("AZURE_SPEECH_REGION", "francecentral")
+AI_SERVICE_TOKEN    = os.getenv("AI_SERVICE_TOKEN", "")
 
 client = InferenceClient(model=REPO_ID, token=HF_TOKEN)
 
@@ -151,16 +152,30 @@ def get_reranker():
     return _reranker
 
 USER_CONTEXTS: dict = {}
+USER_ACTIVE_SESSIONS: dict = {}
 
-def get_user_context(username: str) -> dict:
+def get_or_create_session_id(username: str, session_id: Optional[str] = None) -> str:
     uname = sanitize_username(username)
-    if uname not in USER_CONTEXTS:
-        USER_CONTEXTS[uname] = {"doc_store": {}, "active_docs": [], "doc_hashes": set()}
-    return USER_CONTEXTS[uname]
+    if session_id:
+        return ensure_session(session_id, name=f"{uname or 'Session'}")
+    if uname not in USER_ACTIVE_SESSIONS:
+        USER_ACTIVE_SESSIONS[uname] = create_session(name=f"{uname or 'Session'}")
+    return USER_ACTIVE_SESSIONS[uname]
 
-def clear_user_context(username: str):
+def _context_key(username: str, session_id: Optional[str]) -> str:
     uname = sanitize_username(username)
-    USER_CONTEXTS[uname] = {"doc_store": {}, "active_docs": [], "doc_hashes": set()}
+    sid = get_or_create_session_id(username, session_id)
+    return f"{uname}:{sid}"
+
+def get_user_context(username: str, session_id: Optional[str] = None) -> dict:
+    key = _context_key(username, session_id)
+    if key not in USER_CONTEXTS:
+        USER_CONTEXTS[key] = {"doc_store": {}, "active_docs": [], "doc_hashes": set()}
+    return USER_CONTEXTS[key]
+
+def clear_user_context(username: str, session_id: Optional[str] = None):
+    key = _context_key(username, session_id)
+    USER_CONTEXTS[key] = {"doc_store": {}, "active_docs": [], "doc_hashes": set()}
 
 # ==============================================================================
 # ✅ USERNAME + DATA DIRS
@@ -175,11 +190,14 @@ def is_valid_username(name: str) -> bool:
     cleaned = sanitize_username(name)
     return len(cleaned) >= 2
 
-def ensure_user_dirs(username: str) -> Path:
+def ensure_user_dirs(username: str, session_id: Optional[str] = None) -> Path:
     DATA_DIR.mkdir(exist_ok=True)
     user_root = DATA_DIR / sanitize_username(username)
     (user_root / "history").mkdir(parents=True, exist_ok=True)
-    (user_root / "uploads").mkdir(parents=True, exist_ok=True)
+    uploads_root = user_root / "uploads"
+    uploads_root.mkdir(parents=True, exist_ok=True)
+    if session_id:
+        (uploads_root / session_id).mkdir(parents=True, exist_ok=True)
     return user_root
 
 # ==============================================================================
@@ -219,8 +237,8 @@ def init_db():
     conn.commit()
     conn.close()
 
-def create_session(name: str = None, doc_names: list = None) -> str:
-    session_id = str(uuid.uuid4())[:8]
+def create_session(name: str = None, doc_names: list = None, session_id: Optional[str] = None) -> str:
+    session_id = session_id or str(uuid.uuid4())[:8]
     now = datetime.utcnow().isoformat()
     if not name:
         name = f"Session {datetime.now().strftime('%b %d %H:%M')}"
@@ -230,6 +248,23 @@ def create_session(name: str = None, doc_names: list = None) -> str:
         (session_id, name, now, now, json.dumps(doc_names or []))
     )
     conn.commit()
+    conn.close()
+    return session_id
+
+def ensure_session(session_id: str, name: str = None, doc_names: list = None) -> str:
+    if not session_id:
+        raise ValueError("session_id is required")
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT id FROM sessions WHERE id=?", (session_id,)).fetchone()
+    if not row:
+        now = datetime.utcnow().isoformat()
+        if not name:
+            name = f"Session {datetime.now().strftime('%b %d %H:%M')}"
+        conn.execute(
+            "INSERT INTO sessions (id, name, created_at, updated_at, doc_names) VALUES (?,?,?,?,?)",
+            (session_id, name, now, now, json.dumps(doc_names or []))
+        )
+        conn.commit()
     conn.close()
     return session_id
 
@@ -294,14 +329,6 @@ def update_session_docs(session_id: str, doc_names: list):
     conn.close()
 
 init_db()
-
-_active_session_id: str = None
-
-def get_or_create_session() -> str:
-    global _active_session_id
-    if _active_session_id is None:
-        _active_session_id = create_session()
-    return _active_session_id
 
 # ==============================================================================
 # 🧾  USER HISTORY FILES (JSONL)
@@ -570,24 +597,26 @@ def file_hash(path: str) -> str:
             h.update(chunk)
     return h.hexdigest()
 
-def store_user_upload(file_path: str, username: str):
-    user_root = ensure_user_dirs(username)
-    uploads_dir = user_root / "uploads"
+def store_user_upload(file_path: str, username: str, session_id: Optional[str] = None):
+    user_root = ensure_user_dirs(username, session_id=session_id)
+    uploads_dir = user_root / "uploads" / (session_id or "shared")
+    uploads_dir.mkdir(parents=True, exist_ok=True)
     target = uploads_dir / Path(file_path).name
     try:
         shutil.copy2(file_path, target)
     except Exception:
         pass
 
-def process_files(files, username: str):
+def process_files(files, username: str, session_id: Optional[str] = None):
     if not is_valid_username(username):
         return "⚠️ Please enter your name first."
     if not files:
         return "📁 Ready — upload one or more files to get started."
 
-    ensure_user_dirs(username)
-    clear_user_context(username)
-    ctx         = get_user_context(username)
+    sid = get_or_create_session_id(username, session_id)
+    ensure_user_dirs(username, session_id=sid)
+    clear_user_context(username, sid)
+    ctx         = get_user_context(username, sid)
     doc_store   = ctx["doc_store"]
     active_docs = ctx["active_docs"]
     doc_hashes  = ctx["doc_hashes"]
@@ -600,7 +629,7 @@ def process_files(files, username: str):
         file_name = Path(file_path).name
 
         try:
-            store_user_upload(file_path, username)
+            store_user_upload(file_path, username, sid)
             fhash = file_hash(file_path)
             if fhash in doc_hashes:
                 results.append(f"⚠️ {file_name} — already indexed (duplicate).")
@@ -647,7 +676,6 @@ def process_files(files, username: str):
             results.append(f"❌ {file_name} — {e}")
 
     if loaded_names:
-        sid = get_or_create_session()
         update_session_docs(sid, [doc_store[d]["meta"]["name"]
                                    for d in active_docs if d in doc_store])
 
@@ -655,14 +683,14 @@ def process_files(files, username: str):
     return "\n\n".join(results) + f"\n\n---\n📚 Active ({len(loaded)}): {', '.join(loaded) or 'none'}"
 
 
-def clear_documents(username: str) -> str:
+def clear_documents(username: str, session_id: Optional[str] = None) -> str:
     if not is_valid_username(username):
         return "⚠️ Enter your name first."
-    clear_user_context(username)
+    clear_user_context(username, session_id)
     return "🗑️ All documents cleared. Upload new files to start fresh."
 
-def list_documents(username: str = ""):
-    ctx = get_user_context(username) if username else {"doc_store": {}, "active_docs": []}
+def list_documents(username: str = "", session_id: Optional[str] = None):
+    ctx = get_user_context(username, session_id) if username else {"doc_store": {}, "active_docs": []}
     doc_store   = ctx["doc_store"]
     active_docs = ctx["active_docs"]
     if not doc_store:
@@ -903,7 +931,7 @@ def build_system_prompt(lang: str, mode: str, has_docs: bool,
 # 💬  CHAT LOGIC
 # ==============================================================================
 
-def chat_logic(message: str, history: list, username: str) -> Generator[str, None, None]:
+def chat_logic(message: str, history: list, username: str, session_id: Optional[str] = None) -> Generator[str, None, None]:
     if not is_valid_username(username):
         yield "⚠️ Please enter your name first."
         return
@@ -913,13 +941,13 @@ def chat_logic(message: str, history: list, username: str) -> Generator[str, Non
 
     lang    = detect_language(message)
     mode    = detect_mode(message)
-    sid     = get_or_create_session()
+    sid     = get_or_create_session_id(username, session_id)
     uname   = sanitize_username(username)
 
     save_message(sid, "user", message.strip())
     append_history_file(uname, sid, "user", message.strip())
 
-    ctx         = get_user_context(username)
+    ctx         = get_user_context(username, sid)
     doc_store   = ctx["doc_store"]
     active_docs = ctx["active_docs"]
 
@@ -1344,8 +1372,8 @@ def text_to_video(text: str, lang: str) -> str:
         return final_path
 
 # FIX 2: Strict script-generation prompt — no preamble, no meta-commentary
-def build_script_from_docs(username: str, user_text: str, lang: str) -> str:
-    ctx         = get_user_context(username)
+def build_script_from_docs(username: str, user_text: str, lang: str, session_id: Optional[str] = None) -> str:
+    ctx         = get_user_context(username, session_id)
     doc_store   = ctx["doc_store"]
     active_docs = ctx["active_docs"]
 
@@ -1404,12 +1432,12 @@ def build_script_from_docs(username: str, user_text: str, lang: str) -> str:
         return user_text.strip()
 
 
-def generate_audio_only(text: str, username: str, use_docs: bool, lang_choice: str):
+def generate_audio_only(text: str, username: str, use_docs: bool, lang_choice: str, session_id: Optional[str] = None):
     try:
         if not text.strip() and not use_docs:
             return None, "⚠️ Enter text or enable 'Use uploaded docs'."
         lang   = resolve_lang(lang_choice, text)
-        script = build_script_from_docs(username, text, lang) if use_docs else text
+        script = build_script_from_docs(username, text, lang, session_id) if use_docs else text
         audio_path = os.path.join(
             os.getcwd(), f"audio_{int(datetime.utcnow().timestamp())}.mp3"
         )
@@ -1418,12 +1446,12 @@ def generate_audio_only(text: str, username: str, use_docs: bool, lang_choice: s
     except Exception as e:
         return None, f"⚠️ Audio error: {e}"
 
-def generate_video_only(text: str, username: str, use_docs: bool, lang_choice: str):
+def generate_video_only(text: str, username: str, use_docs: bool, lang_choice: str, session_id: Optional[str] = None):
     try:
         if not text.strip() and not use_docs:
             return None, "⚠️ Enter text or enable 'Use uploaded docs'."
         lang   = resolve_lang(lang_choice, text)
-        script = build_script_from_docs(username, text, lang) if use_docs else text
+        script = build_script_from_docs(username, text, lang, session_id) if use_docs else text
         video_path = text_to_video(script, lang)
         return video_path, "✅ Video generated."
     except Exception as e:
@@ -1924,29 +1952,58 @@ demo = build_ui()
 if FASTAPI_AVAILABLE:
     app = FastAPI()
 
+    def require_internal_token(
+        x_internal_token: Optional[str] = Header(None),
+        authorization: Optional[str] = Header(None),
+    ):
+        if not AI_SERVICE_TOKEN:
+            return
+        token = x_internal_token
+        if not token and authorization:
+            parts = authorization.split(" ", 1)
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                token = parts[1]
+        if token != AI_SERVICE_TOKEN:
+            raise HTTPException(status_code=403, detail="Invalid internal token.")
+
     @app.get("/api/health")
-    def api_health():
+    def api_health(_=Depends(require_internal_token)):
         return {"status": "ok"}
 
     @app.post("/api/chat")
-    def api_chat(payload: dict = Body(...)):
+    def api_chat(payload: dict = Body(...), _=Depends(require_internal_token)):
+        session_id = payload.get("session_id", "")
         username = payload.get("username", "")
         message  = payload.get("message", "")
         history  = payload.get("history", [])
+        if not session_id:
+            raise HTTPException(status_code=400, detail="session_id is required.")
         final    = ""
-        for chunk in chat_logic(message, history, username):
+        for chunk in chat_logic(message, history, username, session_id=session_id):
             final = chunk
-        return {"reply": final}
+        return {"reply": final, "session_id": session_id}
 
     @app.post("/api/upload")
-    async def api_upload(username: str, files: list[UploadFile] = File(...)):
+    async def api_upload(
+        request: Request,
+        files: list[UploadFile] = File(...),
+        username: Optional[str] = Form(None),
+        session_id: Optional[str] = Form(None),
+        _=Depends(require_internal_token),
+    ):
+        if not username:
+            username = request.query_params.get("username", "")
+        if not session_id:
+            session_id = request.query_params.get("session_id", "")
+        if not session_id or not username:
+            raise HTTPException(status_code=400, detail="session_id and username are required.")
         paths = []
         for f in files:
             suffix = Path(f.filename).suffix
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 tmp.write(await f.read())
                 paths.append(tmp.name)
-        result = process_files(paths, username)
+        result = process_files(paths, username, session_id=session_id)
         for p in paths:
             try:
                 os.remove(p)
