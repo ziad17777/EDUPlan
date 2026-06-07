@@ -1,3 +1,4 @@
+import requests as http_requests
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.views import APIView
@@ -9,13 +10,10 @@ from .models import UploadedFile
 from .serializers import UploadedFileSerializer, AISummaryWebhookSerializer
 from .validators import validate_uploaded_file, get_mime_type_from_extension
 
+HF_BASE_URL = "https://ziad177777-eduplan.hf.space"
+
 
 class UploadFileView(APIView):
-    """
-    POST /api/files/upload/
-    Upload a file. Validates type (PDF, DOCX, PPTX, XLSX, CSV, JPG, JPEG, PNG)
-    and size (max 20MB). Returns file metadata.
-    """
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
@@ -23,7 +21,6 @@ class UploadFileView(APIView):
         file = request.FILES.get('file')
         if not file:
             return Response({'error': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
-
         try:
             ext = validate_uploaded_file(file)
         except Exception as e:
@@ -39,29 +36,20 @@ class UploadFileView(APIView):
             file_size=file.size,
             status='uploaded'
         )
-
         serializer = UploadedFileSerializer(uploaded_file, context={'request': request})
-        return Response({
-            'message': 'File uploaded successfully.',
-            'file': serializer.data
-        }, status=status.HTTP_201_CREATED)
+        return Response({'message': 'File uploaded successfully.', 'file': serializer.data}, status=status.HTTP_201_CREATED)
 
 
 class UserFilesListView(APIView):
-    """GET /api/files/ — Retrieve all files belonging to the authenticated user."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         files = UploadedFile.objects.filter(user=request.user)
         serializer = UploadedFileSerializer(files, many=True, context={'request': request})
-        return Response({
-            'count': files.count(),
-            'files': serializer.data
-        })
+        return Response({'count': files.count(), 'files': serializer.data})
 
 
 class FileDetailView(APIView):
-    """GET /api/files/<file_id>/ — Retrieve a single file's metadata."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request, file_id):
@@ -74,7 +62,6 @@ class FileDetailView(APIView):
 
 
 class DeleteFileView(APIView):
-    """DELETE /api/files/<file_id>/delete/ — Delete a file and remove it from disk."""
     permission_classes = [IsAuthenticated]
 
     def delete(self, request, file_id):
@@ -82,68 +69,74 @@ class DeleteFileView(APIView):
             file = UploadedFile.objects.get(id=file_id, user=request.user)
         except UploadedFile.DoesNotExist:
             return Response({'error': 'File not found.'}, status=status.HTTP_404_NOT_FOUND)
-        file.delete()  # Calls custom delete() that removes file from disk
+        file.delete()
         return Response({'message': 'File deleted successfully.'}, status=status.HTTP_200_OK)
 
 
 # ─────────────────────────────────────────────────────────────
-# AI INTEGRATION ENDPOINTS (Placeholders)
+# AI INTEGRATION — CONNECTED TO HUGGING FACE
 # ─────────────────────────────────────────────────────────────
 
 class SendFileToAIView(APIView):
     """
     POST /api/files/<file_id>/send-to-ai/
-    
-    AI INTEGRATION PLACEHOLDER
-    ──────────────────────────
-    This endpoint is the trigger point for the AI team's file processing pipeline.
-    
-    What happens here (to be implemented by AI team):
-    1. Retrieve the file from storage.
-    2. Send the file (or a signed URL) to the AI service.
-    3. The AI service processes the file asynchronously.
-    4. The AI service calls POST /api/files/<file_id>/ai-summary/ with the result.
-    
-    Current behavior: Marks the file as 'processing' and returns a placeholder response.
+
+    Sends the file to Hugging Face at:
+    POST https://ziad177777-eduplan.hf.space/api/upload
+
+    The AI processes it and the summary is stored back in the database.
     """
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request, file_id):
         try:
-            file = UploadedFile.objects.get(id=file_id, user=request.user)
+            uploaded_file = UploadedFile.objects.get(id=file_id, user=request.user)
         except UploadedFile.DoesNotExist:
             return Response({'error': 'File not found.'}, status=status.HTTP_404_NOT_FOUND)
 
         # Mark as processing
-        file.status = 'processing'
-        file.save()
+        uploaded_file.status = 'processing'
+        uploaded_file.save()
 
-        # TODO (AI Team): Replace with actual AI service call
-        # Example:
-        # ai_service.send_file(file_url=file.file.url, callback_url=f"/api/files/{file_id}/ai-summary/")
+        # Send file to Hugging Face
+        ai_error = None
+        try:
+            with open(uploaded_file.file.path, 'rb') as f:
+                hf_response = http_requests.post(
+                    f"{HF_BASE_URL}/api/upload?username={str(request.user.id)}",
+                    files={"files": (uploaded_file.original_filename, f, uploaded_file.mime_type)},
+                    timeout=60
+                )
+            if hf_response.status_code == 200:
+                result = hf_response.json()
+                uploaded_file.ai_summary = result.get('status', 'File processed by AI.')
+                uploaded_file.status = 'processed'
+                uploaded_file.ai_processed_at = timezone.now()
+                uploaded_file.save()
+            else:
+                ai_error = f"AI service returned status {hf_response.status_code}"
+                uploaded_file.status = 'failed'
+                uploaded_file.save()
+        except http_requests.exceptions.Timeout:
+            ai_error = "AI service timed out."
+            uploaded_file.status = 'failed'
+            uploaded_file.save()
+        except http_requests.exceptions.ConnectionError:
+            ai_error = "Could not connect to AI service."
+            uploaded_file.status = 'failed'
+            uploaded_file.save()
 
+        serializer = UploadedFileSerializer(uploaded_file, context={'request': request})
         return Response({
-            'message': 'File queued for AI processing. [PLACEHOLDER — AI integration pending]',
-            'file_id': str(file.id),
-            'status': file.status,
+            'message': 'File sent to AI.' if not ai_error else 'AI processing failed.',
+            'file': serializer.data,
+            'ai_error': ai_error
         })
 
 
 class AISummaryWebhookView(APIView):
-    """
-    POST /api/files/<file_id>/ai-summary/
-    
-    AI INTEGRATION PLACEHOLDER — WEBHOOK RECEIVER
-    ──────────────────────────────────────────────
-    The AI service calls this endpoint to deliver the file summary back to our backend.
-    
-    Expected payload:
-    {
-        "file_id": "<uuid>",
-        "summary": "This document contains...",
-        "status": "processed" | "failed"
-    }
-    """
+    """Kept for manual summary injection if needed."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request, file_id):
@@ -153,15 +146,9 @@ class AISummaryWebhookView(APIView):
                 file = UploadedFile.objects.get(id=file_id, user=request.user)
             except UploadedFile.DoesNotExist:
                 return Response({'error': 'File not found.'}, status=status.HTTP_404_NOT_FOUND)
-
             file.ai_summary = serializer.validated_data['summary']
             file.status = serializer.validated_data['status']
             file.ai_processed_at = timezone.now()
             file.save()
-
-            return Response({
-                'message': 'AI summary stored successfully.',
-                'file_id': str(file.id),
-                'status': file.status,
-            })
+            return Response({'message': 'AI summary stored.', 'file_id': str(file.id), 'status': file.status})
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
