@@ -1,3 +1,4 @@
+import requests as http_requests
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -10,66 +11,45 @@ from .serializers import (
 )
 from files.models import UploadedFile
 
+HF_BASE_URL = "https://ziad177777-eduplan.hf.space"
+
 
 # ─────────────────────────────────────────────────────────────
 # CHAT SESSION MANAGEMENT
 # ─────────────────────────────────────────────────────────────
 
 class ChatSessionListView(APIView):
-    """
-    GET  /api/chat/sessions/        — List all chat sessions for the user.
-    POST /api/chat/sessions/create/ — Explicitly create a new empty session.
-    
-    Note: Sessions are also auto-created when the user sends their first message.
-    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         sessions = ChatSession.objects.filter(user=request.user)
         serializer = ChatSessionListSerializer(sessions, many=True)
-        return Response({
-            'count': sessions.count(),
-            'sessions': serializer.data
-        })
+        return Response({'count': sessions.count(), 'sessions': serializer.data})
 
 
 class CreateChatSessionView(APIView):
-    """POST /api/chat/sessions/create/ — Explicitly create a new chat session."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         title = request.data.get('title', '')
         session = ChatSession.objects.create(user=request.user, title=title)
         serializer = ChatSessionDetailSerializer(session)
-        return Response({
-            'message': 'Chat session created.',
-            'session': serializer.data
-        }, status=status.HTTP_201_CREATED)
+        return Response({'message': 'Chat session created.', 'session': serializer.data}, status=status.HTTP_201_CREATED)
 
 
 class ChatSessionDetailView(APIView):
-    """
-    GET    /api/chat/sessions/<session_id>/ — Full session details + all messages.
-    DELETE /api/chat/sessions/<session_id>/delete/ — Delete session + all messages.
-    """
     permission_classes = [IsAuthenticated]
 
-    def _get_session(self, session_id, user):
-        try:
-            return ChatSession.objects.get(id=session_id, user=user)
-        except ChatSession.DoesNotExist:
-            return None
-
     def get(self, request, session_id):
-        session = self._get_session(session_id, request.user)
-        if not session:
+        try:
+            session = ChatSession.objects.get(id=session_id, user=request.user)
+        except ChatSession.DoesNotExist:
             return Response({'error': 'Session not found.'}, status=status.HTTP_404_NOT_FOUND)
         serializer = ChatSessionDetailSerializer(session)
         return Response(serializer.data)
 
 
 class DeleteChatSessionView(APIView):
-    """DELETE /api/chat/sessions/<session_id>/delete/ — Delete a session."""
     permission_classes = [IsAuthenticated]
 
     def delete(self, request, session_id):
@@ -82,7 +62,6 @@ class DeleteChatSessionView(APIView):
 
 
 class ChatHistoryView(APIView):
-    """GET /api/chat/sessions/<session_id>/history/ — Full message history for a session."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request, session_id):
@@ -90,7 +69,6 @@ class ChatHistoryView(APIView):
             session = ChatSession.objects.get(id=session_id, user=request.user)
         except ChatSession.DoesNotExist:
             return Response({'error': 'Session not found.'}, status=status.HTTP_404_NOT_FOUND)
-
         messages = session.messages.all().order_by('created_at')
         serializer = ChatMessageSerializer(messages, many=True, context={'request': request})
         return Response({
@@ -106,15 +84,6 @@ class ChatHistoryView(APIView):
 # ─────────────────────────────────────────────────────────────
 
 class AttachFileToChatView(APIView):
-    """
-    POST /api/chat/sessions/<session_id>/attach-file/
-    
-    Attach a previously uploaded file to a chat session.
-    This creates a 'file' type message in the session timeline,
-    so the chat history reflects the file was shared at that point.
-    
-    Body: { "file_id": "<uuid>" }
-    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request, session_id):
@@ -142,29 +111,21 @@ class AttachFileToChatView(APIView):
         session.update_activity()
 
         serializer = ChatMessageSerializer(message, context={'request': request})
-        return Response({
-            'message': 'File attached to chat session.',
-            'chat_message': serializer.data
-        }, status=status.HTTP_201_CREATED)
+        return Response({'message': 'File attached to chat session.', 'chat_message': serializer.data}, status=status.HTTP_201_CREATED)
 
 
 # ─────────────────────────────────────────────────────────────
-# MESSAGING
+# MESSAGING — CONNECTED TO HUGGING FACE AI
 # ─────────────────────────────────────────────────────────────
 
 class SendMessageView(APIView):
     """
     POST /api/chat/messages/send/
-    
-    Send a user message. If no session_id is provided, a new session is
-    auto-created and the session_id is returned to the frontend.
-    
-    Body:
-    {
-        "content": "Hello, summarize this file.",
-        "attached_file_id": "<uuid>",   // optional
-        "session_id": "<uuid>"           // optional — omit to start a new session
-    }
+
+    Sends the user message to the Hugging Face AI at:
+    POST https://ziad177777-eduplan.hf.space/api/chat
+
+    Then stores both the user message and the AI reply in the database.
     """
     permission_classes = [IsAuthenticated]
 
@@ -184,30 +145,23 @@ class SendMessageView(APIView):
             except ChatSession.DoesNotExist:
                 return Response({'error': 'Session not found.'}, status=status.HTTP_404_NOT_FOUND)
         else:
-            # Auto-create session on first message
             content_preview = data.get('content', '')[:50] or 'New conversation'
-            session = ChatSession.objects.create(
-                user=request.user,
-                title=content_preview
-            )
+            session = ChatSession.objects.create(user=request.user, title=content_preview)
             session_created = True
 
         # Resolve optional file attachment
         attached_file = None
         if data.get('attached_file_id'):
             try:
-                attached_file = UploadedFile.objects.get(
-                    id=data['attached_file_id'],
-                    user=request.user
-                )
+                attached_file = UploadedFile.objects.get(id=data['attached_file_id'], user=request.user)
             except UploadedFile.DoesNotExist:
                 return Response({'error': 'Attached file not found.'}, status=status.HTTP_404_NOT_FOUND)
 
         # Determine message type
         msg_type = 'file' if attached_file and not data.get('content') else 'text'
 
-        # Store user message
-        message = ChatMessage.objects.create(
+        # Store user message in DB
+        user_message = ChatMessage.objects.create(
             session=session,
             sender='user',
             message_type=msg_type,
@@ -216,52 +170,69 @@ class SendMessageView(APIView):
         )
         session.update_activity()
 
-        msg_serializer = ChatMessageSerializer(message, context={'request': request})
+        # Build chat history to send to Hugging Face
+        history = [
+            {"role": "user" if m.sender == "user" else "assistant", "content": m.content}
+            for m in session.messages.exclude(id=user_message.id).order_by('created_at')
+        ]
 
-        # TODO (AI Team): After storing the user message, forward to AI service:
-        # ai_service.send_message(session_id=session.id, message=message.content, file=attached_file)
-        # AI response will be delivered via POST /api/chat/sessions/<id>/ai-response/
+        # Call Hugging Face AI
+        ai_reply = None
+        ai_error = None
+        try:
+            hf_response = http_requests.post(
+                f"{HF_BASE_URL}/api/chat",
+                json={
+                    "username": str(request.user.id),
+                    "message": data.get('content', ''),
+                    "history": history
+                },
+                timeout=30
+            )
+            if hf_response.status_code == 200:
+                ai_reply = hf_response.json().get('reply', '')
+            else:
+                ai_error = f"AI service returned status {hf_response.status_code}"
+        except http_requests.exceptions.Timeout:
+            ai_error = "AI service timed out."
+        except http_requests.exceptions.ConnectionError:
+            ai_error = "Could not connect to AI service."
+
+        # Store AI reply in DB
+        ai_message = None
+        if ai_reply:
+            ai_message = ChatMessage.objects.create(
+                session=session,
+                sender='ai',
+                message_type='ai_response',
+                content=ai_reply
+            )
+            session.update_activity()
+
+        user_msg_serializer = ChatMessageSerializer(user_message, context={'request': request})
+        ai_msg_serializer = ChatMessageSerializer(ai_message, context={'request': request}) if ai_message else None
 
         return Response({
             'session_id': str(session.id),
             'session_created': session_created,
-            'message': msg_serializer.data,
-            'ai_status': 'pending [AI integration placeholder]'
+            'user_message': user_msg_serializer.data,
+            'ai_message': ai_msg_serializer.data if ai_msg_serializer else None,
+            'ai_error': ai_error
         }, status=status.HTTP_201_CREATED)
 
 
-# ─────────────────────────────────────────────────────────────
-# AI INTEGRATION ENDPOINTS (Placeholders)
-# ─────────────────────────────────────────────────────────────
-
 class AIResponseWebhookView(APIView):
-    """
-    POST /api/chat/sessions/<session_id>/ai-response/
-    
-    AI INTEGRATION PLACEHOLDER — WEBHOOK RECEIVER
-    ──────────────────────────────────────────────
-    The AI service calls this endpoint to deliver its response.
-    The response is stored as a ChatMessage with sender='ai'.
-    
-    Expected payload:
-    {
-        "session_id": "<uuid>",
-        "content": "Here is the AI response...",
-        "message_type": "ai_response" | "ai_summary"
-    }
-    """
+    """Kept for manual AI response injection if needed."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request, session_id):
         serializer = AIResponseWebhookSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
         try:
             session = ChatSession.objects.get(id=session_id, user=request.user)
         except ChatSession.DoesNotExist:
             return Response({'error': 'Session not found.'}, status=status.HTTP_404_NOT_FOUND)
-
         ai_message = ChatMessage.objects.create(
             session=session,
             sender='ai',
@@ -269,9 +240,5 @@ class AIResponseWebhookView(APIView):
             content=serializer.validated_data['content']
         )
         session.update_activity()
-
         msg_serializer = ChatMessageSerializer(ai_message, context={'request': request})
-        return Response({
-            'message': 'AI response stored in chat history.',
-            'ai_message': msg_serializer.data
-        }, status=status.HTTP_201_CREATED)
+        return Response({'message': 'AI response stored.', 'ai_message': msg_serializer.data}, status=status.HTTP_201_CREATED)
