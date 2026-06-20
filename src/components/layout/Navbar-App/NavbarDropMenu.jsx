@@ -18,11 +18,12 @@ export default function NavbarDropMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger>
         <Avatar>
-          {user?.username ? <AvatarFallback>{initials}</AvatarFallback> : (
-            <>
-              <AvatarImage src="https://github.com/shadcn.png" />
-              <AvatarFallback>CN</AvatarFallback>
-            </>
+          {user?.profile_picture_url ? (
+            <AvatarImage src={user.profile_picture_url} className="object-cover" />
+          ) : user?.username ? (
+            <AvatarFallback>{initials}</AvatarFallback>
+          ) : (
+            <AvatarFallback>CN</AvatarFallback>
           )}
         </Avatar>
       </DropdownMenuTrigger>

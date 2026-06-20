@@ -5,11 +5,14 @@ import { RouterProvider } from 'react-router-dom'
 import router from './routes/router'
 import { ThemeProvider } from './Provider'
 import AuthProvider from './store/AuthProvider'
+import { Toaster } from "@/components/ui/sonner"
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ThemeProvider>
       <AuthProvider>
         <RouterProvider router={router} />
+        <Toaster />
       </AuthProvider>
     </ThemeProvider>
   </StrictMode>,

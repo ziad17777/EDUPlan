@@ -13,6 +13,8 @@ import AppPage from "./pages/App.page";
 import ProfilePage from "./pages/Profile.page";
 import SettingPage from "./pages/Setting.page";
 import HistoryPage from "./pages/History.page";
+import ForgetPassword from "./pages/ForgetPassword.page";
+import ResetPassword from "./pages/ResetPassword.page";
 const router = createBrowserRouter([
   // { path: '/', element: <LoginPage /> },
   {
@@ -48,11 +50,11 @@ const router = createBrowserRouter([
       },
             {
         path: "forget-password",
-        element: <div>forget password</div>,
+        element: <ForgetPassword/>,
       },
             {
         path: "rest-password",
-        element: <div>rest password</div>,
+        element: <ResetPassword/>,
       },
      
     ],
@@ -63,6 +65,10 @@ const router = createBrowserRouter([
     children: [
       {
         index: true,
+        element: <AppPage/>,
+      },
+      {
+        path: "chat/:id",
         element: <AppPage/>,
       },
       {

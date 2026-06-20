@@ -1,19 +1,25 @@
-import { cn } from "@/lib/utils"; // optional if you use shadcn/ui utils
+import { useMemo } from "react";
+import { cn } from "@/lib/utils";
+import { detectTextDirection } from "@/lib/textDirection";
 
 export default function UserMessage({
   message = "",
   avatar,
   username = "You",
 }) {
+  const dir = useMemo(() => detectTextDirection(message), [message]);
+  const isRtl = dir === "rtl";
+
   return (
     <article className="flex items-start justify-end gap-4 animate-fade-in">
       {/* Message content */}
-      <div className="flex flex-col items-end gap-1 text-right">
+      <div className="flex flex-col items-end gap-1">
         <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
           {username}
         </p>
 
         <div
+          dir={dir}
           className={cn(
             "rounded-lg p-3 text-white max-w-md",
             "bg-primary transition-transform duration-200 hover:scale-[1.01]"

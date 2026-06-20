@@ -12,7 +12,9 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Link } from "react-router-dom"; // or wherever your router is
+import { Link, useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { Loader2 } from "lucide-react";
 import { useAuth } from "@/store/auth";
 
 const signInSchema = z.object({
@@ -24,6 +26,9 @@ const signInSchema = z.object({
 
 export default function SignIn() {
   const { signin } = useAuth();
+  const navigate = useNavigate();
+  const [isLoading, setIsLoading] = useState(false);
+  const [serverError, setServerError] = useState(null);
   const form = useForm({
     resolver: zodResolver(signInSchema),
     mode: "onSubmit",
@@ -33,16 +38,23 @@ export default function SignIn() {
     },
   });
 
-  const onSubmit = (data) => {
-    // call API and set auth context
-    signin({ username: data.email, password: data.password }).then((resp) => {
+  const onSubmit = async (data) => {
+    setIsLoading(true);
+    setServerError(null);
+    try {
+      const resp = await signin({ email: data.email, password: data.password });
       if (resp.ok) {
-        // redirect to app
-        window.location.href = '/app';
+        navigate('/app');
       } else {
-        alert(resp.data?.message || 'Sign in failed');
+        const msg = resp.data?.detail || resp.data?.message || resp.data?.error || 'Invalid email or password';
+        setServerError(msg);
       }
-    });
+    } catch (err) {
+      console.error('Sign in error', err);
+      setServerError('Network error. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -51,9 +63,15 @@ export default function SignIn() {
         <div className="text-center mb-8">
           <h2 className="text-3xl font-bold text-white">Sign In</h2>
           <p className="text-white/60 mt-2">
-            Welcome back to eduplan. Let’s get learning!
+            Welcome back to eduplan. Let's get learning!
           </p>
         </div>
+
+        {serverError && (
+          <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center">
+            {serverError}
+          </div>
+        )}
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -94,19 +112,25 @@ export default function SignIn() {
                 </FormItem>
               )}
             />
-{/* 
+
             <div className="text-right">
               <Link
-                to="/forgot-password"
+                to="/auth/forget-password"
                 className="text-sm text-primary hover:underline"
               >
                 Forgot Password?
               </Link>
-            </div> */}
+            </div>
 
             <div className="text-center">
-              <Button className="w-full sm:w-1/2 min-w-40" type="submit">
-                Sign In
+              <Button className="w-full sm:w-1/2 min-w-40" type="submit" disabled={isLoading}>
+                {isLoading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Loader2 className="animate-spin" /> Signing in...
+                  </span>
+                ) : (
+                  'Sign In'
+                )}
               </Button>
             </div>
           </form>
@@ -115,7 +139,7 @@ export default function SignIn() {
         <div className="my-6 flex items-center">
           <div className="flex-grow border-t border-white/20" />
           <span className="mx-4 text-sm text-white/60">
-            Don’t have an account?
+            Don't have an account?
           </span>
           <div className="flex-grow border-t border-white/20" />
         </div>

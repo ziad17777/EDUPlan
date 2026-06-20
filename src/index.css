@@ -225,3 +225,43 @@
 .active-nav-link {
   font-weight: bold;
 }
+
+/* ── AI Markdown Chat Content ── */
+.ai-markdown-content {
+  font-size: 0.875rem;
+  line-height: 1.625;
+}
+
+.ai-markdown-content > *:first-child {
+  margin-top: 0;
+}
+
+.ai-markdown-content > *:last-child {
+  margin-bottom: 0;
+}
+
+/* Nested list indentation */
+.ai-markdown-content ul ul,
+.ai-markdown-content ol ol,
+.ai-markdown-content ul ol,
+.ai-markdown-content ol ul {
+  margin-left: 1rem;
+  margin-top: 0.125rem;
+  margin-bottom: 0.125rem;
+}
+
+/* List marker styling */
+.ai-markdown-content li::marker {
+  color: var(--primary);
+}
+
+/* Inline code */
+.ai-markdown-content code:not(pre code) {
+  font-size: 0.8125rem;
+}
+
+/* Smooth transitions for code blocks */
+.ai-markdown-content pre {
+  transition: background-color 0.2s ease;
+}
+

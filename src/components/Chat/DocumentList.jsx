@@ -1,7 +1,7 @@
 import React from "react";
 import FileItem from "./FileItem";
 
-export default function DocumentList({ files = [], onRemove }) {
+export default function DocumentList({ files = [], onRemove, onDeleteRemote, onSendToAi }) {
   if (!files || files.length === 0) {
     return <div className="text-sm text-gray-500 dark:text-gray-400">No documents uploaded yet.</div>;
   }
@@ -9,7 +9,13 @@ export default function DocumentList({ files = [], onRemove }) {
   return (
     <div className="flex flex-col gap-2 ">
       {files.map((f) => (
-        <FileItem key={f.id} file={f} onRemove={() => onRemove(f.id)} />
+        <FileItem 
+          key={f.id} 
+          file={f} 
+          onRemove={() => onRemove(f.id)} 
+          onDeleteRemote={() => onDeleteRemote && onDeleteRemote(f.server)} 
+          onSendToAi={() => onSendToAi && onSendToAi(f.server)}
+        />
       ))}
     </div>
   );
