@@ -12,9 +12,9 @@ const API_BASE = (typeof window !== 'undefined' && window.EDUPLAN_API_BASE) || '
 const ALLOWED_EXTS = ['.pdf', '.docx', '.pptx', '.xlsx', '.csv', '.jpg', '.jpeg', '.png'];
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 
-function extOf(name){
+function extOf(name) {
   const i = name.lastIndexOf('.');
-  return i>=0 ? name.slice(i).toLowerCase() : '';
+  return i >= 0 ? name.slice(i).toLowerCase() : '';
 }
 
 function formatSize(bytes) {
@@ -114,7 +114,7 @@ export default function DocumentUploader({ sessionId }) {
   const onPick = async (e) => {
     const picked = Array.from(e.target.files || []);
     if (picked.length === 0) return;
-    
+
     const newFiles = picked.map((f) => {
       const ext = extOf(f.name);
       const isValidType = ALLOWED_EXTS.includes(ext);
@@ -171,7 +171,7 @@ export default function DocumentUploader({ sessionId }) {
         form.append('file', f.file, f.name);
 
         const res = await authedFetch(`${API_BASE}/files/upload/`, { method: 'POST', body: form });
-        const data = await res.json().catch(()=>null);
+        const data = await res.json().catch(() => null);
         if (!res.ok) {
           if (res.status === 401) {
             clearStoredTokens();
@@ -196,7 +196,7 @@ export default function DocumentUploader({ sessionId }) {
             // No session yet — queue for attachment when session is created
             pendingAttachRef.current.push(serverFile.id);
           }
-          
+
           // Auto-trigger AI Analysis
           await autoSendToAi(serverFile, f.id);
         }
@@ -211,7 +211,7 @@ export default function DocumentUploader({ sessionId }) {
     if (!fileServer || !fileServer.id) return;
 
     // update status to processing
-    setFiles((prev) => prev.map((p) => 
+    setFiles((prev) => prev.map((p) =>
       p.id === localId ? { ...p, server: { ...p.server, status: 'processing' } } : p
     ));
 
@@ -249,7 +249,7 @@ export default function DocumentUploader({ sessionId }) {
   // manual AI trigger just in case
   const onSendToAi = async (fileServer) => {
     const pFile = files.find(f => f.server?.id === fileServer.id);
-    if(pFile) {
+    if (pFile) {
       await autoSendToAi(fileServer, pFile.id);
     }
   };
@@ -258,7 +258,7 @@ export default function DocumentUploader({ sessionId }) {
 
   const onDeleteRemote = async (fileServer) => {
     if (!fileServer || !fileServer.id) return;
-    
+
     try {
       const res = await authedFetch(`${API_BASE}/files/${fileServer.id}/delete/`, { method: 'DELETE' });
       if (res.status === 401) {
@@ -303,7 +303,7 @@ export default function DocumentUploader({ sessionId }) {
             onChange={onPick}
             className="hidden"
           />
-          <Button onClick={() => fileInputRef.current?.click()} disabled={!sessionId} className="px-3 w-full">Upload Document</Button>
+          <Button onClick={() => fileInputRef.current?.click()} disabled={!sessionId} className="px-3 w-full" >Upload Document</Button>
         </div>
 
         <div>
