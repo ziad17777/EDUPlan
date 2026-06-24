@@ -13,6 +13,7 @@ A full-stack education productivity platform that combines a modern React fronte
 - [API Overview](#api-overview)
 - [Project Structure](#project-structure)
 - [Development Commands](#development-commands)
+- [Deployment](#deployment)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
@@ -168,6 +169,25 @@ python manage.py migrate
 python manage.py test
 python manage.py runserver
 ```
+
+## Deployment
+This repository includes a Render Blueprint at:
+
+`/render.yaml`
+
+### Deploy online with Render
+1. Push this repository to GitHub.
+2. In Render, choose **New +** → **Blueprint**.
+3. Select this repository and deploy using `render.yaml`.
+4. After the first deploy, update service names/domains in Render if needed and sync:
+   - `ALLOWED_HOSTS`
+   - `CORS_ALLOWED_ORIGINS`
+   - `CSRF_TRUSTED_ORIGINS`
+   - `VITE_API_BASE_URL`
+
+### Environment files
+- Backend example: `backend/.env.example`
+- Frontend example: `frontend/.env.example`
 
 ## Roadmap
 - Connect chat endpoint to real AI responses
