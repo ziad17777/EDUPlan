@@ -1,6 +1,6 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { File, X, BrainCircuit, Loader2 } from 'lucide-react';
+import { File, X, BrainCircuit, Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
 
 function formatBytes(bytes) {
   if (bytes === 0) return "0 B";
@@ -16,13 +16,19 @@ export default function FileItem({ file, onDeleteRemote, onSendToAi }) {
   const isServerFile = !!file.server;
   const isProcessing = isServerFile && file.server.status === 'processing';
   const isProcessed = isServerFile && file.server.status === 'processed';
+  const isFailed = isServerFile && file.server.status === 'failed';
   
+  // Build the correct file URL — API returns absolute URLs
+  const fileUrl = isServerFile && file.server.file_url
+    ? (file.server.file_url.startsWith('http') ? file.server.file_url : `${API_BASE.replace('/api', '')}${file.server.file_url}`)
+    : null;
+
   return (
     <div className="flex flex-col gap-2 rounded-md border bg-background-light dark:bg-gray-800 p-3">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 flex flex-shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-            <File size={16} />
+          <div className={`h-10 w-10 flex flex-shrink-0 items-center justify-center rounded-md ${isFailed ? 'bg-red-500/10 text-red-400' : 'bg-primary/10 text-primary'}`}>
+            {isFailed ? <AlertTriangle size={16} /> : <File size={16} />}
           </div>
           <div className="min-w-0">
             <div className="font-medium text-sm text-gray-800 dark:text-gray-200 truncate max-w-[200px]" title={file.name}>
@@ -32,9 +38,9 @@ export default function FileItem({ file, onDeleteRemote, onSendToAi }) {
               {formatBytes(file.size)} • {isServerFile ? file.server.status : file.status}
               {file.error ? ` • ${file.error}` : ''}
             </div>
-            {isServerFile && file.server.file_url && (
+            {fileUrl && (
               <div className="mt-1 text-xs text-primary hover:underline">
-                <a href={`${API_BASE.replace('/api', '')}${file.server.file_url}`} target="_blank" rel="noreferrer">
+                <a href={fileUrl} target="_blank" rel="noreferrer">
                   View file
                 </a>
               </div>
@@ -47,6 +53,19 @@ export default function FileItem({ file, onDeleteRemote, onSendToAi }) {
             <div className="flex items-center text-xs text-primary px-2 border border-primary/20 bg-primary/5 rounded h-8">
               <Loader2 size={14} className="animate-spin mr-1" /> Analyzing...
             </div>
+          )}
+
+          {/* Retry AI button when processing failed */}
+          {isFailed && onSendToAi && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onSendToAi()}
+              className="h-8 text-xs text-amber-500 border-amber-500/30 hover:bg-amber-500/10"
+              title="Retry AI processing"
+            >
+              <RefreshCw size={14} className="mr-1" /> Retry AI
+            </Button>
           )}
 
           {/* Delete Button */}
@@ -67,6 +86,14 @@ export default function FileItem({ file, onDeleteRemote, onSendToAi }) {
           )}
         </div>
       </div>
+
+      {/* Failed state notice */}
+      {isFailed && (
+        <div className="mt-1 text-xs text-red-400 bg-red-500/5 p-2 rounded border border-red-500/10 flex items-start gap-1.5">
+          <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
+          <span>AI processing failed. This may be a temporary issue with the AI service. Try again later or use the "Retry AI" button.</span>
+        </div>
+      )}
       
       {/* Display AI Summary if available */}
       {isProcessed && file.server.ai_summary && (

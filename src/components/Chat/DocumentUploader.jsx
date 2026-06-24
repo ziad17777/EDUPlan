@@ -221,30 +221,43 @@ export default function DocumentUploader({ sessionId }) {
         headers: { 'Content-Type': 'application/json' },
       });
       const data = await res.json().catch(() => null);
+
+      if (res.status === 502) {
+        // AI service is unreachable — mark as failed with retry option
+        setFiles((prev) => prev.map((p) =>
+          p.id === localId ? { ...p, server: { ...p.server, status: 'failed' } } : p
+        ));
+        toast.error('AI service is temporarily unavailable. You can retry later.');
+        return;
+      }
+
       if (res.ok && data) {
         const updatedFile = data.file || data;
         setFiles((prev) => prev.map((p) =>
           p.id === localId ? { ...p, server: { ...p.server, ...updatedFile } } : p
         ));
         if (data.ai_error) {
-          toast.error(`AI processing error: ${data.ai_error}`);
+          toast.error(`AI processing failed: ${data.ai_error}`);
+        } else if (updatedFile.status === 'failed') {
+          toast.error('AI processing failed. You can retry later.');
         } else {
-          toast.success(`${fileServer.original_filename || fileServer.name || 'File'} sent to AI successfully.`);
+          toast.success(`${fileServer.original_filename || fileServer.name || 'File'} analyzed by AI.`);
         }
       } else {
         setFiles((prev) => prev.map((p) =>
-          p.id === localId ? { ...p, server: { ...p.server, status: 'uploaded' } } : p
+          p.id === localId ? { ...p, server: { ...p.server, status: 'failed' } } : p
         ));
         toast.error(data?.detail || data?.error || 'Failed to send to AI');
       }
     } catch (err) {
       console.error('Send to AI failed', err);
       setFiles((prev) => prev.map((p) =>
-        p.id === localId ? { ...p, server: { ...p.server, status: 'uploaded' } } : p
+        p.id === localId ? { ...p, server: { ...p.server, status: 'failed' } } : p
       ));
       toast.error('Failed to send to AI: Network error');
     }
   };
+
 
   // manual AI trigger just in case
   const onSendToAi = async (fileServer) => {

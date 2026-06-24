@@ -1,537 +1,576 @@
-# API Reference
+# API Reference — Phoenix Eduplan (backend)
 
-This document describes all public API endpoints, HTTP methods, request and response schemas (JSON), and possible error responses with HTTP status codes.
+This document describes all public API endpoints implemented in this project, their request/response schemas, authentication, and guidance for integrating the frontend.
 
-Notes:
-- All endpoints under `/api/` return JSON responses.
-- Endpoints marked with ✅ require an Authorization header: `Authorization: Bearer <access_token>`.
-- UUIDs are strings in standard UUID format.
+Summary
+- Base API prefix (typical): `/api/` (adjust to your project's URL config). The app contains three main areas:
+  - Auth & Users: `/api/auth/...` (implemented in `users/` app)
+  - Files: `/api/files/...` (implemented in `files/` app)
+  - Chat / AI integration: `/api/chat/...` (implemented in `chat/` app)
+- Authentication: JWT (Simple JWT). After login, pass `Authorization: Bearer <access_token>` on protected endpoints.
 
-## Authentication (/api/auth/)
+Common details
+- All endpoints that require authentication are protected with `IsAuthenticated` and return 401 when called without a valid token.
+- All JSON request bodies use application/json (except multipart file uploads — use multipart/form-data).
+- All UUID path parameters are 36-character UUID strings (e.g. `550e8400-e29b-41d4-a716-446655440000`).
+
+Quick integration checklist for frontend
+- Login flow: call `/api/auth/login/` to obtain access & refresh tokens. Store the access token (short lived) in memory or secure storage. Use refresh token to renew.
+- Add header: `Authorization: Bearer <access_token>` for protected endpoints.
+- File uploads: use `multipart/form-data` to `/api/files/upload/` with a `file` field.
+- When calling endpoints that may return a file path (audio/video/database exports), expect a local path or URL; the backend copies into MEDIA and returns a full absolute URL.
+- Handle 502 responses: these indicate the AI backend (external space) is unreachable; show a user-friendly message and optionally retry.
+
+--
+
+## Auth & Users
 
 ### POST /api/auth/register/
-- Auth: Public
-- Description: Register a new user and return initial JWT tokens and user profile.
+Create account.
 
-Request (application/json):
+Request JSON
 {
   "email": "user@example.com",
   "first_name": "First",
   "last_name": "Last",
-  "password": "strongPassword123!",
-  "password_confirm": "strongPassword123!"
+  "password": "P@ssw0rd!",
+  "password_confirm": "P@ssw0rd!"
 }
 
-Success (201 Created):
+Responses
+- 201 Created
 {
   "message": "Account created successfully.",
-  "user": { /* UserProfile object */ },
-  "tokens": {
-    "access": "<jwt_access>",
-    "refresh": "<jwt_refresh>"
-  }
+  "user": { /* user profile */ },
+  "tokens": { "access": "<jwt>", "refresh": "<jwt>" }
 }
+- 400 Validation errors (e.g. password mismatch)
 
-Errors:
-- 400 Bad Request — validation errors (email invalid, passwords don't match, weak password)
+Notes: `password` is validated via Django password validators.
 
 ---
 
 ### POST /api/auth/login/
-- Auth: Public
-- Description: Obtain JWT tokens using credentials.
+Authenticate and get JWT tokens.
 
-Request (application/json):
+Request JSON (as expected by Simple JWT)
 {
   "email": "user@example.com",
-  "password": "..."
+  "password": "P@ssw0rd!"
 }
 
-Success (200 OK):
+Responses
+- 200 OK
 {
-  "refresh": "<refresh_token>",
-  "access": "<access_token>",
-  "user": { /* UserProfile object */ }
+  "refresh": "<refresh_jwt>",
+  "access": "<access_jwt>",
+  "user": { /* full user profile */ }
 }
+- 401/400 - invalid credentials
 
-Errors:
-- 401 Unauthorized — invalid credentials
+Use: set `Authorization: Bearer <access>` on protected endpoints.
 
 ---
 
 ### POST /api/auth/logout/
-- Auth: ✅
-- Description: Blacklist the provided refresh token.
+Invalidate (blacklist) refresh token.
 
-Request (application/json):
+Request JSON
 {
   "refresh": "<refresh_token>"
 }
 
-Success (200 OK):
-{
-  "message": "Logged out successfully."
-}
-
-Errors:
-- 400 Bad Request — missing refresh token or invalid/expired token
-- 401 Unauthorized — missing/invalid access token
-
----
-
-### POST /api/auth/token/refresh/
-- Auth: Public (uses refresh token)
-- Description: Exchange a refresh token for a new access token.
-
-Request:
-{
-  "refresh": "<refresh_token>"
-}
-
-Success (200 OK):
-{
-  "access": "<new_access_token>"
-}
-
-Errors:
-- 401 Unauthorized — invalid or expired refresh token
+Responses
+- 200 OK { "message": "Logged out successfully." }
+- 400 Invalid or missing token
 
 ---
 
 ### GET /api/auth/profile/
-- Auth: ✅
-- Description: Get authenticated user's profile.
+Get authenticated user's profile.
 
-Success (200 OK): UserProfile object
+Headers: Authorization
 
-UserProfile schema:
-{
-  "id": "<uuid>",
-  "email": "user@example.com",
-  "first_name": "First",
-  "last_name": "Last",
-  "full_name": "First Last",
-  "profile_picture_url": "https://.../media/..",
-  "date_joined": "2025-01-01T12:00:00Z",
-  "updated_at": "2025-01-02T12:00:00Z"
-}
-
-Errors:
-- 401 Unauthorized — missing/invalid access token
+Response
+- 200 OK — user profile JSON (see serializer fields)
 
 ---
 
 ### PATCH /api/auth/profile/update/
-- Auth: ✅
-- Description: Update first_name and/or last_name.
+Update first & last name.
 
-Request (application/json):
+Request JSON
 {
   "first_name": "New",
   "last_name": "Name"
 }
 
-Success (200 OK):
-{
-  "message": "Profile updated successfully.",
-  "user": { /* UserProfile object */ }
-}
-
-Errors:
-- 400 Bad Request — validation errors
-- 401 Unauthorized
+Responses
+- 200 OK — returns updated user object
+- 400 Validation errors
 
 ---
 
 ### POST /api/auth/profile/picture/
-- Auth: ✅
-- Description: Upload or replace profile picture. Multi-part form.
+Upload or replace profile picture.
 
-Request (multipart/form-data):
-- profile_picture: file (JPEG or PNG, max 5MB)
+Form: multipart/form-data — field `profile_picture`
 
-Success (200 OK):
-{
-  "message": "Profile picture updated.",
-  "user": { /* UserProfile object */ }
-}
-
-Errors:
-- 400 Bad Request — invalid file type or too large
-- 401 Unauthorized
+Response
+- 200 OK — updated user object
+- 400 Validation errors (size/type)
 
 ---
 
 ### DELETE /api/auth/profile/picture/delete/
-- Auth: ✅
-- Description: Delete profile picture.
+Remove profile picture.
 
-Success (200 OK):
-{ "message": "Profile picture deleted." }
-
-Errors:
-- 404 Not Found — no profile picture to delete
-- 401 Unauthorized
+Response
+- 200 OK { "message": "Profile picture deleted." }
+- 404 if not set
 
 ---
 
 ### POST /api/auth/change-password/
-- Auth: ✅
-- Description: Change password for authenticated user.
+Change password while authenticated.
 
-Request (application/json):
+Request JSON
 {
   "old_password": "...",
-  "new_password": "newStrongPass123!",
-  "new_password_confirm": "newStrongPass123!"
+  "new_password": "...",
+  "new_password_confirm": "..."
 }
 
-Success (200 OK):
-{ "message": "Password changed successfully." }
-
-Errors:
-- 400 Bad Request — validation errors or old password incorrect
-- 401 Unauthorized
+Response
+- 200 OK on success
+- 400 on validation or incorrect old password
 
 ---
 
 ### POST /api/auth/password-reset/
-- Auth: Public
-- Description: Request password reset token (development returns token in response).
+Request password reset token (development returns token in response).
 
-Request (application/json):
-{ "email": "user@example.com" }
-
-Success (200 OK):
+Request JSON
 {
-  "message": "Password reset token generated. In production, this would be emailed.",
-  "dev_token": "<token>"
+  "email": "user@example.com"
 }
 
-Errors:
-- 400 Bad Request — invalid email format
+Response
+- 200 OK { "message": "Password reset token generated...", "dev_token": "<token>" }
 
 ---
 
 ### POST /api/auth/password-reset/confirm/
-- Auth: Public
-- Description: Reset password using token.
+Reset password using token.
 
-Request (application/json):
+Request JSON
 {
   "token": "<token>",
   "new_password": "...",
   "new_password_confirm": "..."
 }
 
-Success (200 OK):
-{ "message": "Password reset successfully." }
+Response
+- 200 OK on success
+- 400 invalid or expired token
 
-Errors:
-- 400 Bad Request — invalid/expired token, validation errors
+--
 
----
+## Files API (`files` app)
 
-## File Management (/api/files/)
-
-### POST /api/files/upload/
-- Auth: ✅
-- Description: Upload a file. (File validators in `files.validators` enforce allowed types and size.)
-- Request: multipart/form-data with `file` field.
-
-Success (201 Created):
-{
-  "message": "File uploaded successfully.",
-  "file": { /* UploadedFile object */ }
-}
-
-UploadedFile schema:
-{
-  "id": "<uuid>",
-  "original_filename": "document.pdf",
-  "file_url": "https://.../media/uploads/...",
-  "file_type": "pdf",
-  "mime_type": "application/pdf",
-  "file_size": 12345,
-  "file_size_mb": 0.012,
-  "status": "uploaded|processing|processed|failed",
-  "ai_summary": "...",
-  "ai_processed_at": "2025-01-02T12:00:00Z",
-  "uploaded_at": "2025-01-01T12:00:00Z",
-  "updated_at": "2025-01-02T12:00:00Z"
-}
-
-Errors:
-- 400 Bad Request — no file provided, invalid file type, file too large
-- 401 Unauthorized
-
----
+Base: `/api/files/`
 
 ### GET /api/files/
-- Auth: ✅
-- Description: List files belonging to the authenticated user.
+List user's uploaded files.
 
-Success (200 OK):
+Headers: Authorization
+
+Response
+- 200 OK
 {
-  "count": 2,
-  "files": [ /* array of UploadedFile objects */ ]
+  "count": <int>,
+  "files": [ { uploaded file object } ]
 }
 
-Errors:
-- 401 Unauthorized
+UploadedFile serializer fields (key ones):
+- id (UUID)
+- original_filename
+- file_url (absolute URL)
+- file_type (extension)
+- mime_type
+- file_size (bytes)
+- status (uploaded|processing|processed|failed)
+- ai_summary (text)
+- ai_processed_at
+
+---
+
+### POST /api/files/upload/
+Upload a file (PDF, DOCX, PPTX, images, CSV, TXT, etc.).
+
+Form: multipart/form-data
+- field `file` (the uploaded file)
+
+Response
+- 201 Created
+{
+  "message": "File uploaded successfully.",
+  "file": { /* UploadedFileSerializer output */ }
+}
+- 400 Validation errors
+
+Notes: validation for allowed extensions/mime types is in `files.validators.validate_uploaded_file`.
 
 ---
 
 ### GET /api/files/<file_id>/
-- Auth: ✅
-- Description: Get detail metadata for a specific file.
+Get details for a single file (includes ai_summary if present).
 
-Success (200 OK): UploadedFile object
-
-Errors:
-- 404 Not Found — file not found or does not belong to user
-- 401 Unauthorized
+Response
+- 200 OK — UploadedFile object
+- 404 if not found or not owner
 
 ---
 
 ### DELETE /api/files/<file_id>/delete/
-- Auth: ✅
-- Description: Delete a user's file.
+Delete a file.
 
-Success (200 OK): { "message": "File deleted successfully." }
-
-Errors:
-- 404 Not Found — file not found or not owned by user
-- 401 Unauthorized
+Response
+- 200 OK { "message": "File deleted successfully." }
 
 ---
 
 ### POST /api/files/<file_id>/send-to-ai/
-- Auth: ✅
-- Description: Send a file to the configured AI service for processing. Response includes ai_error if the external AI failed.
+Send a file to the AI service (the Gradio Space) for processing/summarization.
 
-Success (200 OK):
-{
-  "message": "File sent to AI.",
-  "file": { /* UploadedFile object with updated status */ },
-  "ai_error": null
-}
+Behavior:
+- The view marks file `status='processing'`, uploads the file (via gradio_client) to the Space endpoint `/on_process`, and records returned summary into `ai_summary` and sets status `processed` / `failed`.
+- This endpoint expects the backend to have network access to the Space.
 
-Possible Errors:
-- 404 Not Found — file not found
-- 401 Unauthorized
-- 502 Bad Gateway (implicit) — if AI service returns an unexpected error; currently the code returns 200 with ai_error populated.
+Response
+- 200 OK with updated file object and optional `ai_error` if processing failed.
+- 404 when file not found.
+
+Notes for frontend: call this after upload to trigger AI processing.
 
 ---
 
 ### POST /api/files/<file_id>/ai-summary/
-- Auth: ✅
-- Description: Webhook used by AI to POST the generated summary back to this service.
+Webhook endpoint for manually storing a summary returned by AI (used if the AI calls back to your backend).
 
-Request (application/json):
+Request JSON
 {
   "file_id": "<uuid>",
   "summary": "...",
-  "status": "processed|failed"
+  "status": "processed" | "failed"
 }
 
-Success (200 OK):
-{ "message": "AI summary stored.", "file_id": "<uuid>", "status": "processed" }
+Response
+- 200 OK on success
+- 400 Validation errors
 
-Errors:
-- 400 Bad Request — validation errors
-- 404 Not Found — file not found
-- 401 Unauthorized
+--
 
----
+## Chat & AI integration (`chat` app)
 
-## Chat System (/api/chat/)
+Base: `/api/chat/`
+
+All chat endpoints require `Authorization: Bearer <access_token>`.
 
 ### GET /api/chat/sessions/
-- Auth: ✅
-- Description: List chat sessions for the authenticated user.
+List user's chat sessions.
 
-Success (200 OK):
-{
-  "count": 2,
-  "sessions": [ /* ChatSessionListSerializer objects */ ]
-}
+Response
+- 200 OK
+{ "count": N, "sessions": [ /* ChatSessionListSerializer objects */ ] }
 
-ChatSessionList item:
-{
-  "id": "<uuid>",
-  "title": "...",
-  "message_count": 5,
-  "last_message": { "sender": "user|ai", "content": "...", "created_at": "..." },
-  "created_at": "...",
-  "last_activity_at": "..."
-}
-
-Errors:
-- 401 Unauthorized
+ChatSession list fields include: id, title, message_count, last_message preview, created_at, last_activity_at.
 
 ---
 
 ### POST /api/chat/sessions/create/
-- Auth: ✅
-- Description: Create a chat session explicitly (optional; sessions are auto-created when sending messages without session_id).
+Create a new chat session.
 
-Request (application/json):
+Request JSON
 { "title": "Optional title" }
 
-Success (201 Created):
-{ "message": "Chat session created.", "session": { /* ChatSession detail */ } }
-
-Errors:
-- 400 Bad Request — invalid data
-- 401 Unauthorized
+Response: 201 Created
+{ "message": "Chat session created.", "session": { session object } }
 
 ---
 
 ### GET /api/chat/sessions/<session_id>/
-- Auth: ✅
-- Description: Get session detail and included messages.
+Get session details including messages (ChatSessionDetailSerializer).
 
-Success (200 OK): ChatSessionDetail object
-
-ChatSessionDetail schema:
-{
-  "id": "<uuid>",
-  "title": "...",
-  "message_count": 3,
-  "messages": [ /* ChatMessage objects */ ],
-  "created_at": "...",
-  "last_activity_at": "..."
-}
-
-ChatMessage object:
-{
-  "id": "<uuid>",
-  "sender": "user|ai",
-  "message_type": "text|file|ai_response|ai_summary",
-  "content": "...",
-  "attached_file": { /* UploadedFile object or null */ },
-  "attached_file_id": "<uuid> (write-only field)",
-  "is_read": false,
-  "created_at": "..."
-}
-
-Errors:
-- 404 Not Found — session not found
-- 401 Unauthorized
+Response
+- 200 OK — includes `messages` list (each message serialized by `ChatMessageSerializer`)
 
 ---
 
 ### DELETE /api/chat/sessions/<session_id>/delete/
-- Auth: ✅
-- Description: Delete a chat session.
+Delete a session.
 
-Success (200 OK): { "message": "Chat session deleted." }
-
-Errors:
-- 404 Not Found
-- 401 Unauthorized
+Response
+- 200 OK on success
 
 ---
 
 ### GET /api/chat/sessions/<session_id>/history/
-- Auth: ✅
-- Description: Return full chronological message history for the session.
+Get chronological history of messages for a session.
 
-Success (200 OK):
+Response
+- 200 OK
 {
   "session_id": "<uuid>",
   "title": "...",
-  "message_count": 10,
-  "messages": [ /* array of ChatMessage objects */ ]
+  "message_count": <int>,
+  "messages": [ { ChatMessageSerializer } ]
 }
 
-Errors:
-- 404 Not Found
-- 401 Unauthorized
+ChatMessage fields (key ones): id, sender (user|ai), message_type (text|file|ai_response), content, attached_file (if any), is_read, created_at.
 
 ---
 
 ### POST /api/chat/sessions/<session_id>/attach-file/
-- Auth: ✅
-- Description: Attach an existing uploaded file to the session as a message.
+Attach an existing uploaded file to a session (creates a ChatMessage of type `file`).
 
-Request (application/json):
+Request JSON
 { "file_id": "<uuid>" }
 
-Success (201 Created):
-{ "message": "File attached to chat session.", "chat_message": { /* ChatMessage object */ } }
-
-Errors:
-- 400 Bad Request — missing file_id
-- 404 Not Found — session not found or file not found / not owned by user
-- 401 Unauthorized
+Response
+- 201 Created with created ChatMessage object
 
 ---
 
 ### POST /api/chat/messages/send/
-- Auth: ✅
-- Description: Send a message to the chat AI. Creates a session if session_id omitted. The server stores the user message and attempts to call the external AI. The response includes any AI reply or an ai_error if the external call failed.
+Main message send endpoint. This stores the user message and forwards the message to the external AI Space (ziad177777/EduPlan) using `gradio_client`.
 
-Request (application/json):
+Request JSON (SendMessageSerializer)
 {
-  "content": "Hello, summarize the attached file.",
-  "attached_file_id": "<uuid> (optional)",
-  "session_id": "<uuid> (optional)"
+  "content": "Hello, explain X",
+  "attached_file_id": "<uuid>" (optional),
+  "session_id": "<uuid>" (optional)  // if absent a new session is created
 }
 
-Success (201 Created):
+Validation: either content or attached_file_id must be present.
+
+Behavior
+- Creates a ChatMessage (sender=user)
+- Calls the external Space `/chat_logic` via gradio_client with `message` and `username` (username passed as user id string)
+- The returned AI content is stored as a ChatMessage (sender=ai)
+
+Responses
+- 201 Created
 {
   "session_id": "<uuid>",
   "session_created": true|false,
   "user_message": { /* ChatMessage */ },
   "ai_message": { /* ChatMessage or null */ },
-  "ai_error": null | "error description"
+  "ai_error": null | "error string"
 }
 
-Errors:
-- 400 Bad Request — validation errors (e.g., neither content nor attached_file_id provided)
-- 404 Not Found — session or attached file not found
-- 401 Unauthorized
+Errors
+- 400 on validation errors
+- 502 if the AI client fails (for example if the Space is down)
+
+Frontend integration tips
+- Call this endpoint when the user submits a chat input. Show a loading state while waiting. If `ai_error` is present, show a friendly error and optionally retry.
+- Use the returned `user_message` and `ai_message` to update the chat UI in-place, rather than re-fetching the entire session.
 
 ---
 
 ### POST /api/chat/sessions/<session_id>/ai-response/
-- Auth: ✅
-- Description: Webhook endpoint for AI service to post responses back to a session.
+Webhook for external AI to store its response (if the AI service pushes results back). This is mainly internal and requires authentication.
 
-Request (application/json):
+Request JSON (AIResponseWebhookSerializer)
 {
   "session_id": "<uuid>",
-  "content": "AI reply...",
-  "message_type": "ai_response|ai_summary"
+  "content": "...",
+  "message_type": "ai_response" | "ai_summary"
 }
 
-Success (201 Created):
-{ "message": "AI response stored.", "ai_message": { /* ChatMessage */ } }
-
-Errors:
-- 400 Bad Request — validation errors
-- 404 Not Found — session not found
-- 401 Unauthorized
+Response
+- 201 Created { "message": "AI response stored.", "ai_message": { ... } }
 
 ---
 
-## Common Errors & Status Codes
-- 200 OK — Success for GET/DELETE/others where appropriate
-- 201 Created — Resource created (register, upload, create session, send message)
-- 400 Bad Request — Validation errors, missing parameters, invalid types
-- 401 Unauthorized — Missing/invalid access token
-- 403 Forbidden — User authenticated but not permitted (not used heavily in this project)
-- 404 Not Found — Resource doesn't exist or doesn't belong to the user
-- 500 Internal Server Error — Unexpected server error
+### POST /api/chat/plan/generate/
+Generate a study plan from active documents.
 
+Request JSON
+{ "duration": "1 week" | "2 weeks" | "1 month", "lang": "auto" | "en" | "ar" }
 
-## Notes & Next Steps
-- This reference was generated by inspecting route definitions, views, and serializers. It lists every endpoint under `/api/` and describes expected JSON shapes and error responses.
-- To make this machine-readable (OpenAPI/Swagger), consider adding DRF's schema generation and documenting serializers with explicit field help_text. I can implement an OpenAPI schema and Swagger UI if you'd like.
-
+Response
+- 200 OK { "duration": ..., "lang": ..., "plan": "<markdown or text>" }
+- 502 if AI backend unreachable
 
 ---
 
-End of API Reference.
+### POST /api/chat/grade/
+Grade an essay.
+
+Request JSON
+{ "essay_text": "...", "rubric": "optional", "lang_choice": "auto"|"en"|"ar" }
+
+Response
+- 200 OK { "feedback": "<AI string>" }
+
+---
+
+### POST /api/chat/audio/generate/
+Generate audio (TTS) from text (or from uploaded documents via backend logic).
+
+Request JSON
+{ "text": "...", "lang": "auto" | "en" | "ar" }
+
+Behavior
+- Calls the external Space endpoints to generate audio. The backend then stores a copy in MEDIA and returns a public URL.
+
+Response
+- 200 OK { "audio_url": "https://<host>/media/generated/audio/<user_id>/<file>.mp3" }
+- 502 on AI backend failures
+
+Notes for frontend
+- This endpoint requires the user to be authenticated.
+- After receiving `audio_url`, you can play it in an HTML5 <audio> element.
+
+---
+
+### POST /api/chat/video/generate/
+Generate a video from text (slides + TTS) via the Space.
+
+Request JSON
+{ "text": "...", "lang": "auto" | "en" | "ar" }
+
+Response
+- 200 OK { "video_url": "https://<host>/media/generated/video/<user_id>/<file>.mp4" }
+
+---
+
+### POST /api/chat/vocab/generate/
+Generate vocabulary extraction from user's documents.
+
+Request JSON
+{ "lang": "auto" | "en" | "ar" }
+
+Response
+- 200 OK { "lang": "...", "vocab": "<markdown/text>" }
+
+---
+
+### GET /api/chat/analytics/
+Get analytics about user's activity.
+
+Response
+- 200 OK { "analytics": "<markdown/report>" }
+
+---
+
+### GET /api/chat/export/db/
+Proxy to fetch the AI space's SQLite DB for debugging. Backend copies the DB into MEDIA and returns a public URL.
+
+Response
+- 200 OK { "download_url": "https://<host>/media/generated/exports/<user_id>/file.db" }
+
+---
+
+### GET /api/chat/export/history/
+Proxy to fetch user's history ZIP from the AI Space and return a public URL.
+
+Response
+- 200 OK { "download_url": "https://<host>/media/generated/exports/<user_id>/history.zip" }
+
+
+## Error model and codes
+- 200 OK — Successful read operations or successful actions.
+- 201 Created — Successful resource creation (sessions, messages, uploads).
+- 400 Bad Request — Validation errors.
+- 401 Unauthorized — Missing or invalid JWT.
+- 404 Not Found — Resource doesn't exist or doesn't belong to user.
+- 502 Bad Gateway — Upstream AI service (Hugging Face Space) unreachable or returned error.
+
+When a 502 is returned the JSON body contains `{"error": "AI client error: ..."}`.
+
+
+## Frontend integration guide
+
+Authentication
+- Use `/api/auth/login/` to obtain `access` and `refresh` tokens.
+- Attach header `Authorization: Bearer <access>` to all protected endpoints.
+- Use the refresh endpoint `/api/auth/token/refresh/` when access token expires.
+
+File upload & AI processing
+- Upload file to `/api/files/upload/` using `multipart/form-data`.
+- The server returns an UploadedFile object with its `id`.
+- To have the AI process the file, POST to `/api/files/<file_id>/send-to-ai/`.
+- Poll `/api/files/` or GET `/api/files/<file_id>/` to check `status` and `ai_summary`.
+
+Chat UI
+- To open or create sessions: call `/api/chat/sessions/` and `/api/chat/sessions/create/`.
+- When user submits a message, POST `/api/chat/messages/send/` with `content` and optional `session_id`.
+- The response contains both the stored `user_message` and `ai_message` (or `ai_error`).
+- Update the chat UI using those returned message objects.
+
+Playing generated media
+- Call `/api/chat/audio/generate/` or `/api/chat/video/generate/`.
+- The backend returns `audio_url` / `video_url` which are absolute URLs. Use these directly in <audio>/<video> tags.
+
+Handling failures gracefully
+- For 502 errors due to AI backend failures, display a helpful message and provide a retry option.
+- For long-running generation operations (video), indicate progress in UI and consider polling to avoid blocking.
+
+Security notes
+- Do not store access tokens in localStorage unencrypted on shared devices; prefer in-memory and refresh when needed.
+- All file uploads should be validated on the backend (the project already validates types/size for some endpoints).
+
+
+## Appendix — Example frontend snippets
+
+Fetch with access token (JSON request):
+
+```javascript
+const token = localStorage.getItem('access');
+const resp = await fetch('/api/chat/messages/send/', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+  },
+  body: JSON.stringify({ content: 'Explain Newton laws' })
+});
+const data = await resp.json();
+```
+
+File upload (multipart):
+
+```javascript
+const token = localStorage.getItem('access');
+const formData = new FormData();
+formData.append('file', fileInput.files[0]);
+const resp = await fetch('/api/files/upload/', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+  },
+  body: formData,
+});
+const data = await resp.json();
+```
+
+Play generated audio:
+
+```html
+<audio controls src="{{audio_url}}"></audio>
+```
+
+
+## Final notes
+- The API design keeps the AI integration behind the backend so the frontend doesn't need direct HF credentials.
+- If you want the frontend to call the Hugging Face Space directly (e.g., in a client-side deployment), you'll need to update the Space to accept and authenticate such calls.
+- I can extend this `api.md` with OpenAPI / Swagger-compatible schema generation using DRF's schema generators (e.g., `spectacular` or `drf-yasg`) if you want an auto-generated, machine-readable API spec.
+
+If you'd like, I can:
+- Produce an OpenAPI (YAML/JSON) file from your views/serializers.
+- Add example Postman collection.
+- Add unit tests for the endpoints and the new helpers.
+

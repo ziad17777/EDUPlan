@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Loader2, AlertCircle, Copy, Check } from "lucide-react";
+import { Loader2, AlertCircle, Copy, Check, Download, Volume2, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import ReactMarkdown from "react-markdown";
@@ -113,7 +113,52 @@ const markdownComponents = {
   },
 };
 
-export default function AIMessage({ message = "", status = "idle", speed = 30, animate = false }) {
+// Inline media player for audio/video in chat
+function MediaPlayer({ mediaUrl, mediaType }) {
+  if (!mediaUrl) return null;
+
+  const isAudio = mediaType === "audio";
+  const Icon = isAudio ? Volume2 : Video;
+  const label = isAudio ? "Generated Audio" : "Generated Video";
+
+  return (
+    <div className="mt-3 rounded-xl overflow-hidden border border-gray-200/50 dark:border-gray-700/50 bg-gradient-to-br from-gray-100 to-gray-50 dark:from-gray-800/80 dark:to-gray-900/80">
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200/50 dark:border-gray-700/50">
+        <div className="flex items-center gap-2">
+          <div className="h-6 w-6 rounded-full bg-primary/15 flex items-center justify-center">
+            <Icon size={13} className="text-primary" />
+          </div>
+          <span className="text-xs font-semibold text-muted-foreground">{label}</span>
+        </div>
+        <a
+          href={mediaUrl}
+          download
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-md hover:bg-gray-200/60 dark:hover:bg-gray-700/60"
+        >
+          <Download size={12} />
+          <span>Download</span>
+        </a>
+      </div>
+      {/* Player */}
+      <div className="p-3">
+        {isAudio ? (
+          <audio controls src={mediaUrl} className="w-full rounded-lg" style={{ height: 44 }}>
+            Your browser does not support the audio element.
+          </audio>
+        ) : (
+          <video controls src={mediaUrl} className="w-full rounded-lg max-h-[280px] bg-black">
+            Your browser does not support the video element.
+          </video>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function AIMessage({ message = "", status = "idle", speed = 30, animate = false, mediaUrl = null, mediaType = null }) {
   const [displayedText, setDisplayedText] = useState(animate ? "" : message);
   const [copied, setCopied] = useState(false);
   const dir = useMemo(() => detectTextDirection(message), [message]);
@@ -154,13 +199,19 @@ export default function AIMessage({ message = "", status = "idle", speed = 30, a
       return <TypingDots />;
     }
 
-    // Always render markdown, even while typing, so the user sees proper formatting instantly
     return (
-      <div className="ai-markdown-content">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-          {displayedText}
-        </ReactMarkdown>
-      </div>
+      <>
+        {/* Text content */}
+        {displayedText && (
+          <div className="ai-markdown-content">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+              {displayedText}
+            </ReactMarkdown>
+          </div>
+        )}
+        {/* Inline media player */}
+        <MediaPlayer mediaUrl={mediaUrl} mediaType={mediaType} />
+      </>
     );
   };
 

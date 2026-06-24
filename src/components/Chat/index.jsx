@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
+import { AnimatePresence } from "framer-motion";
 import AIMessage from "./AIMessage";
 import UserMessage from "./UserMessage";
+import AIToolbar from "./AIToolbar";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { authedFetch, getStoredTokens, clearStoredTokens } from "@/lib/api";
@@ -8,7 +10,22 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Loader2, Plus, FileText } from "lucide-react";
 import { useAuth } from "@/store/auth";
 
+// Panels
+import StudyPlanPanel from "./panels/StudyPlanPanel";
+import EssayGraderPanel from "./panels/EssayGraderPanel";
+import AudioGenPanel from "./panels/AudioGenPanel";
+import VideoGenPanel from "./panels/VideoGenPanel";
+import VocabPanel from "./panels/VocabPanel";
+
 const API_BASE = (typeof window !== 'undefined' && window.EDUPLAN_API_BASE) || 'http://127.0.0.1:8000/api';
+
+const PANEL_MAP = {
+  studyPlan: StudyPlanPanel,
+  gradeEssay: EssayGraderPanel,
+  audio: AudioGenPanel,
+  video: VideoGenPanel,
+  vocab: VocabPanel,
+};
 
 export default function Chat({ onToggleDocs }) {
   const { user } = useAuth();
@@ -17,6 +34,7 @@ export default function Chat({ onToggleDocs }) {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [activePanel, setActivePanel] = useState(null);
   const chatRef = useRef(null);
   const sessionIdRef = useRef(null);
   const navigate = useNavigate();
@@ -81,6 +99,24 @@ export default function Chat({ onToggleDocs }) {
     navigate('/app');
   };
 
+  const handleSelectTool = (toolKey) => {
+    setActivePanel((prev) => (prev === toolKey ? null : toolKey));
+  };
+
+  // Called by any panel when a result is generated — posts it into chat
+  const handlePanelResult = ({ message, mediaUrl, mediaType }) => {
+    const resultMsg = {
+      id: `panel-${Date.now()}`,
+      type: "ai",
+      message: message || "",
+      status: "idle",
+      mediaUrl: mediaUrl || null,
+      mediaType: mediaType || null, // "audio" | "video" | null
+      animate: true,
+    };
+    setMessages((prev) => [...prev, resultMsg]);
+  };
+
   const handleSend = async () => {
     if (!input.trim()) return;
 
@@ -127,7 +163,9 @@ export default function Chat({ onToggleDocs }) {
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        const errMsg = data?.detail || data?.error || `Failed to send message (${res.status})`;
+        const errMsg = res.status === 502
+          ? "AI service is temporarily unavailable. Your message was saved — the AI will respond when the service recovers."
+          : (data?.detail || data?.error || `Failed to send message (${res.status})`);
         // Remove loading AI placeholder and show error
         setMessages((prev) =>
           prev.map((msg) =>
@@ -139,6 +177,7 @@ export default function Chat({ onToggleDocs }) {
         setIsLoading(false);
         return;
       }
+
 
       // Success — update session ID
       if (data.session_id) {
@@ -209,6 +248,8 @@ export default function Chat({ onToggleDocs }) {
     }
   };
 
+  const ActivePanelComponent = activePanel ? PANEL_MAP[activePanel] : null;
+
   return (
     <section className="min-h-[calc(100dvh-52px)] max-h-[calc(100dvh-52px)] w-full flex flex-col justify-between">
       
@@ -250,7 +291,14 @@ export default function Chat({ onToggleDocs }) {
         ) : (
           messages.map((msg) =>
             msg.type === "ai" ? (
-              <AIMessage key={msg.id} message={msg.message} status={msg.status} animate={msg.animate} />
+              <AIMessage
+                key={msg.id}
+                message={msg.message}
+                status={msg.status}
+                animate={msg.animate}
+                mediaUrl={msg.mediaUrl}
+                mediaType={msg.mediaType}
+              />
             ) : (
               <UserMessage
                 key={msg.id}
@@ -262,6 +310,20 @@ export default function Chat({ onToggleDocs }) {
           )
         )}
       </div>
+
+      {/* Active AI Panel — slides up above toolbar */}
+      <AnimatePresence mode="wait">
+        {ActivePanelComponent && (
+          <ActivePanelComponent
+            key={activePanel}
+            onClose={() => setActivePanel(null)}
+            onResult={handlePanelResult}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* AI Toolbar */}
+      <AIToolbar activePanel={activePanel} onSelectTool={handleSelectTool} />
 
       {/* Input area */}
       <div className="flex items-center gap-2 border-t border-gray-200 dark:border-gray-700 px-4 py-3">
