@@ -85,3 +85,26 @@ class AIResponseWebhookSerializer(serializers.Serializer):
         choices=['ai_response', 'ai_summary'],
         default='ai_response'
     )
+
+
+class AudioGenSerializer(serializers.Serializer):
+    """Validates audio generation requests."""
+    text = serializers.CharField(required=True)
+    lang = serializers.ChoiceField(choices=['auto', 'en', 'ar'], default='auto')
+
+
+class VideoGenSerializer(serializers.Serializer):
+    """Validates video generation requests."""
+    text = serializers.CharField(required=True)
+    lang = serializers.ChoiceField(choices=['auto', 'en', 'ar'], default='auto')
+
+
+class PlanGenSerializer(serializers.Serializer):
+    """Validates study plan generation requests."""
+    duration = serializers.ChoiceField(choices=['1 week', '2 weeks', '1 month'], default='2 weeks')
+    lang = serializers.ChoiceField(choices=['auto', 'en', 'ar'], default='auto')
+
+
+class VocabGenSerializer(serializers.Serializer):
+    """Validates vocabulary generation requests."""
+    lang = serializers.ChoiceField(choices=['auto', 'en', 'ar'], default='auto')
