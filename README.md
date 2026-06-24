@@ -184,6 +184,20 @@ This repository includes a Render Blueprint at:
    - `CORS_ALLOWED_ORIGINS`
    - `CSRF_TRUSTED_ORIGINS`
    - `VITE_API_BASE_URL`
+5. Redeploy both services after environment updates.
+
+### Production notes
+- The Render blueprint provisions:
+  - `eduplan-db` (PostgreSQL)
+  - `eduplan-api` (Django + Gunicorn)
+  - `eduplan-web` (Vite static build)
+- Backend reads `DATABASE_URL` when present; otherwise it falls back to SQLite for local development.
+
+### Post-deploy verification checklist
+- Open the frontend public URL and confirm the app loads.
+- Test auth endpoints from the frontend (register/login/refresh).
+- Test file upload and list flows from the frontend.
+- Test chat session create/message flows from the frontend.
 
 ### Environment files
 - Backend example: `backend/.env.example`

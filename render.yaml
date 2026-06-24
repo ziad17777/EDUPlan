@@ -1,15 +1,24 @@
 services:
+  - type: pserv
+    name: eduplan-db
+    env: postgresql
+    plan: free
+
   - type: web
     name: eduplan-api
     env: python
     rootDir: backend
-    buildCommand: pip install -r requirements.txt && python manage.py migrate
-    startCommand: python manage.py runserver 0.0.0.0:$PORT
+    buildCommand: pip install -r requirements.txt && python manage.py migrate && python manage.py collectstatic --noinput
+    startCommand: gunicorn core.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DEBUG
         value: false
       - key: SECRET_KEY
         generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: eduplan-db
+          property: connectionString
       - key: ALLOWED_HOSTS
         value: eduplan-api.onrender.com
       - key: CORS_ALLOWED_ORIGINS
