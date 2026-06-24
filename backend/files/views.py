@@ -11,6 +11,26 @@ from .serializers import UploadedFileSerializer, AISummaryWebhookSerializer
 from .validators import validate_uploaded_file, get_mime_type_from_extension
 
 HF_BASE_URL = "https://ziad177777-eduplan.hf.space"
+from gradio_client import Client, handle_file
+_GRADIO_CLIENT = None
+
+
+def get_gradio_client():
+    """Lazily initialize and return a gradio_client.Client instance.
+
+    Kept local to avoid circular imports with chat.views. Returns None
+    when the client cannot be created so callers can respond with 502.
+    """
+    global _GRADIO_CLIENT
+    if _GRADIO_CLIENT is not None:
+        return _GRADIO_CLIENT
+    try:
+        _GRADIO_CLIENT = Client("ziad177777/EduPlan")
+        return _GRADIO_CLIENT
+    except Exception as e:
+        print(f"Warning: could not initialize Gradio client: {e}")
+        _GRADIO_CLIENT = None
+        return None
 
 
 class UploadFileView(APIView):
@@ -99,31 +119,171 @@ class SendFileToAIView(APIView):
         uploaded_file.status = 'processing'
         uploaded_file.save()
 
-        # Send file to Hugging Face
+        # Send file to Gradio Space (ziad177777/EduPlan) using gradio_client
         ai_error = None
         try:
-            with open(uploaded_file.file.path, 'rb') as f:
-                hf_response = http_requests.post(
-                    f"{HF_BASE_URL}/api/upload?username={str(request.user.id)}",
-                    files={"files": (uploaded_file.original_filename, f, uploaded_file.mime_type)},
-                    timeout=60
-                )
-            if hf_response.status_code == 200:
-                result = hf_response.json()
-                uploaded_file.ai_summary = result.get('status', 'File processed by AI.')
-                uploaded_file.status = 'processed'
-                uploaded_file.ai_processed_at = timezone.now()
-                uploaded_file.save()
-            else:
-                ai_error = f"AI service returned status {hf_response.status_code}"
+            # Ensure we have a non-empty username to send to the Space.
+            username = getattr(request.user, 'email', None)
+            if not username:
+                # Helpful response for testers (Postman) and for frontends that forgot to authenticate.
+                ai_error = 'Missing authenticated username: please log in to the Django app before sending files to AI.'
                 uploaded_file.status = 'failed'
                 uploaded_file.save()
+                serializer = UploadedFileSerializer(uploaded_file, context={'request': request})
+                print('SendFileToAIView: request.user.email is empty — aborting AI call')
+                return Response({
+                    'message': 'AI processing failed.',
+                    'file': serializer.data,
+                    'ai_error': ai_error
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            client = get_gradio_client()
+            if client is None:
+                ai_error = "AI backend unreachable."
+                uploaded_file.status = 'failed'
+                uploaded_file.save()
+                serializer = UploadedFileSerializer(uploaded_file, context={'request': request})
+                return Response({
+                    'message': 'AI processing failed.',
+                    'file': serializer.data,
+                    'ai_error': ai_error
+                }, status=status.HTTP_502_BAD_GATEWAY)
+
+            # Try the server-facing /django_process API first (files, username)
+            result = None
+            try:
+                result = client.predict(
+                    [handle_file(uploaded_file.file.path)],
+                    request.user.email,
+                    api_name="/django_process",
+                )
+            except Exception as e_primary:
+                print(f"Primary /django_process call failed: {e_primary}")
+
+            # If primary /django_process didn't return, fall back to /on_process and other variants
+            summary = ''
+            if not result:
+                # try the traditional /on_process positional call
+                try:
+                    result = client.predict(
+                        [handle_file(uploaded_file.file.path)],
+                        request.user.email,
+                        api_name="/on_process",
+                    )
+                except Exception as e_pos:
+                    print(f"Positional /on_process call failed: {e_pos}")
+
+            if not result:
+                # try keyword-style call for /on_process
+                try:
+                    result = client.predict(
+                        files=[handle_file(uploaded_file.file.path)],
+                        api_name="/on_process",
+                    )
+                except Exception as e_kw:
+                    print(f"Keyword /on_process call failed: {e_kw}")
+
+            if not result:
+                # experimental: try /django_on_process and /django_process (again)
+                for alt_api in ("/django_on_process",):
+                    try:
+                        print(f"Trying fallback api_name={alt_api}")
+                        result = client.predict(
+                            [handle_file(uploaded_file.file.path)],
+                            request.user.email,
+                            api_name=alt_api,
+                        )
+                        if result:
+                            break
+                    except Exception as e_alt:
+                        print(f"Fallback {alt_api} failed: {e_alt}")
+
+            # Final attempt: call /on_process with files only
+            if not result:
+                try:
+                    result = client.predict(
+                        [handle_file(uploaded_file.file.path)],
+                        api_name="/on_process",
+                    )
+                except Exception as e_final:
+                    print(f"Final /on_process(files) attempt failed: {e_final}")
+
+            # Interpret the result: according to the space, /on_process returns a tuple (markdown, markdown)
+            if result:
+                if isinstance(result, (list, tuple)):
+                    # take first non-empty element
+                    for item in result:
+                        if item:
+                            summary = str(item)
+                            break
+                else:
+                    summary = str(result)
+
+            # If the Space returned a login prompt, try a few server-side django_* fallbacks
+            if summary and "Please log in" in summary:
+                print("on_process returned a login prompt; attempting django_* fallbacks...")
+                fallback_result = None
+                try:
+                    fallback_result = client.predict(
+                        [handle_file(uploaded_file.file.path)],
+                        request.user.email,
+                        api_name="/django_on_process",
+                    )
+                    print("/django_on_process returned", type(fallback_result))
+                except Exception as e_f1:
+                    print(f"/django_on_process failed: {e_f1}")
+
+                if not fallback_result:
+                    try:
+                        fallback_result = client.predict(
+                            [handle_file(uploaded_file.file.path)],
+                            request.user.email,
+                            api_name="/django_process",
+                        )
+                    except Exception as e_f2:
+                        print(f"/django_process failed: {e_f2}")
+
+                if not fallback_result:
+                    # try keyword variations
+                    try:
+                        fallback_result = client.predict(
+                            files=[handle_file(uploaded_file.file.path)],
+                            u=request.user.email,
+                            api_name="/django_on_process",
+                        )
+                    except Exception as e_f3:
+                        print(f"keyword django_on_process failed: {e_f3}")
+
+                if fallback_result:
+                    if isinstance(fallback_result, (list, tuple)):
+                        for item in fallback_result:
+                            if item:
+                                summary = str(item)
+                                break
+                    else:
+                        summary = str(fallback_result)
+
+                # If still login prompt, surface a helpful ai_error
+                if summary and "Please log in" in summary:
+                    ai_error = "AI service requires a Hugging Face login for file processing; please follow the Space's authentication flow or use a server-capable endpoint."
+            else:
+                # no result at all
+                if not summary:
+                    ai_error = ai_error or "AI service did not return a summary; the Space may require login for file processing."
+            uploaded_file.ai_summary = summary or 'File processed by AI.'
+            uploaded_file.status = 'processed'
+            uploaded_file.ai_processed_at = timezone.now()
+            uploaded_file.save()
         except http_requests.exceptions.Timeout:
             ai_error = "AI service timed out."
             uploaded_file.status = 'failed'
             uploaded_file.save()
         except http_requests.exceptions.ConnectionError:
             ai_error = "Could not connect to AI service."
+            uploaded_file.status = 'failed'
+            uploaded_file.save()
+        except Exception as e:
+            ai_error = f"AI client error: {str(e)}"
             uploaded_file.status = 'failed'
             uploaded_file.save()
 
