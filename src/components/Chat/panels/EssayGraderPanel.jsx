@@ -14,8 +14,8 @@ const LANGUAGES = [
   { value: "ar", label: "العربية" },
 ];
 
-export default function EssayGraderPanel({ onClose, onResult }) {
-  const [essayText, setEssayText] = useState("");
+export default function EssayGraderPanel({ onClose, onResult, chatText = "" }) {
+  const [essayText, setEssayText] = useState(chatText);
   const [rubric, setRubric] = useState("");
   const [langChoice, setLangChoice] = useState("auto");
   const [loading, setLoading] = useState(false);

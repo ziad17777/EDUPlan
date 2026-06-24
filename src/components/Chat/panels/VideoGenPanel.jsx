@@ -12,8 +12,8 @@ const LANGUAGES = [
   { value: "ar", label: "العربية" },
 ];
 
-export default function VideoGenPanel({ onClose, onResult }) {
-  const [text, setText] = useState("");
+export default function VideoGenPanel({ onClose, onResult, chatText = "" }) {
+  const [text, setText] = useState(chatText);
   const [lang, setLang] = useState("auto");
   const [loading, setLoading] = useState(false);
   const [videoUrl, setVideoUrl] = useState(null);

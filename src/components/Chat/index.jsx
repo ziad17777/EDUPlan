@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { AnimatePresence } from "framer-motion";
 import AIMessage from "./AIMessage";
 import UserMessage from "./UserMessage";
-import AIToolbar from "./AIToolbar";
+import AIToolbar, { ToolbarToggle } from "./AIToolbar";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { authedFetch, getStoredTokens, clearStoredTokens } from "@/lib/api";
@@ -35,6 +35,7 @@ export default function Chat({ onToggleDocs }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [activePanel, setActivePanel] = useState(null);
+  const [toolbarExpanded, setToolbarExpanded] = useState(false);
   const chatRef = useRef(null);
   const sessionIdRef = useRef(null);
   const navigate = useNavigate();
@@ -318,15 +319,20 @@ export default function Chat({ onToggleDocs }) {
             key={activePanel}
             onClose={() => setActivePanel(null)}
             onResult={handlePanelResult}
+            chatText={input}
           />
         )}
       </AnimatePresence>
 
-      {/* AI Toolbar */}
-      <AIToolbar activePanel={activePanel} onSelectTool={handleSelectTool} />
+      {/* AI Toolbar expanded grid */}
+      <AIToolbar expanded={toolbarExpanded} activePanel={activePanel} onSelectTool={handleSelectTool} />
 
-      {/* Input area */}
-      <div className="flex items-center gap-2 border-t border-gray-200 dark:border-gray-700 px-4 py-3">
+      {/* Input area with AI toggle */}
+      <div className="flex items-center gap-2 border-t border-gray-200 dark:border-gray-700 px-4 py-3 shrink-0">
+        <ToolbarToggle
+          expanded={toolbarExpanded}
+          onToggle={() => setToolbarExpanded((prev) => !prev)}
+        />
         <Input
           placeholder="Type your message..."
           value={input}

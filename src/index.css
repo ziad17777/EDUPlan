@@ -269,52 +269,27 @@
    AI TOOLS — Toolbar
    ══════════════════════════════════════════════ */
 
-.ai-toolbar-container {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
+.ai-toolbar-expanded {
+  overflow: hidden;
   border-top: 1px solid var(--border);
-  background: color-mix(in oklch, var(--background) 80%, transparent);
+  background: color-mix(in oklch, var(--background) 90%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  overflow: hidden;
-}
-
-.ai-toolbar-badge {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 9999px;
-  background: linear-gradient(135deg, oklch(0.55 0.20 260), oklch(0.50 0.22 290));
-  color: white;
-  font-size: 0.625rem;
-  font-weight: 600;
-  white-space: nowrap;
-  letter-spacing: 0.02em;
   flex-shrink: 0;
 }
 
-.ai-toolbar-scroll {
+.ai-toolbar-grid {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   gap: 0.375rem;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  flex: 1;
-}
-
-.ai-toolbar-scroll::-webkit-scrollbar {
-  display: none;
+  padding: 0.625rem 1rem;
 }
 
 .ai-toolbar-btn {
   display: flex;
   align-items: center;
   gap: 0.375rem;
-  padding: 0.375rem 0.75rem;
+  padding: 0.4rem 0.75rem;
   border-radius: 0.5rem;
   border: 1px solid transparent;
   background: transparent;
@@ -324,7 +299,6 @@
   white-space: nowrap;
   cursor: pointer;
   transition: all 0.2s ease;
-  flex-shrink: 0;
 }
 
 .ai-toolbar-btn:hover {
@@ -344,7 +318,44 @@
   display: inline;
 }
 
-@media (max-width: 640px) {
+/* Toggle button — sits in the input bar */
+.ai-toolbar-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.625rem;
+  border: 1px solid color-mix(in oklch, oklch(0.55 0.20 260) 30%, transparent);
+  background: color-mix(in oklch, oklch(0.55 0.20 260) 10%, transparent);
+  color: oklch(0.55 0.20 260);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.ai-toolbar-toggle:hover {
+  background: color-mix(in oklch, oklch(0.55 0.20 260) 20%, transparent);
+  border-color: color-mix(in oklch, oklch(0.55 0.20 260) 50%, transparent);
+  box-shadow: 0 0 12px color-mix(in oklch, oklch(0.55 0.20 260) 15%, transparent);
+}
+
+.ai-toolbar-toggle-active {
+  background: linear-gradient(135deg, oklch(0.55 0.20 260), oklch(0.50 0.22 290)) !important;
+  color: white !important;
+  border-color: transparent !important;
+  box-shadow: 0 2px 12px color-mix(in oklch, oklch(0.55 0.20 260) 30%, transparent);
+}
+
+.ai-toolbar-toggle-chevron {
+  display: flex;
+  align-items: center;
+}
+
+@media (max-width: 480px) {
+  .ai-toolbar-grid {
+    gap: 0.25rem;
+    padding: 0.5rem 0.625rem;
+  }
   .ai-toolbar-label {
     display: none;
   }
@@ -362,10 +373,17 @@
   background: color-mix(in oklch, var(--card) 85%, transparent);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  max-height: 50vh;
+  max-height: 45vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .ai-panel {
+    max-height: 35vh;
+  }
 }
 
 .dark .ai-panel {
