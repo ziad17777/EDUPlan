@@ -1,7 +1,5 @@
-services:
-  - type: pserv
-    name: eduplan-db
-    env: postgresql
+databases:
+  - name: eduplan-db
     plan: free
 
   - type: web
