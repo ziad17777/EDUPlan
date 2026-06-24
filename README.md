@@ -2,7 +2,7 @@
 
 A full-stack education productivity platform that combines a modern React frontend with a Django REST backend to support authentication, file uploads, and AI-chat-ready study workflows.
 
-![EDUPlan Banner](./unnamed.jpg)
+![EDUPlan Banner](./Gemini_Generated_Image_pxfcstpxfcstpxfc.png)
 
 ## Table of Contents
 - [Overview](#overview)
