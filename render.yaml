@@ -1,7 +1,3 @@
-databases:
-  - name: eduplan-db
-    plan: free
-
 services:
   - type: web
     name: eduplan-api
@@ -14,10 +10,6 @@ services:
         value: false
       - key: SECRET_KEY
         generateValue: true
-      - key: DATABASE_URL
-        fromDatabase:
-          name: eduplan-db
-          property: connectionString
       - key: ALLOWED_HOSTS
         value: eduplan-api.onrender.com
       - key: CORS_ALLOWED_ORIGINS
