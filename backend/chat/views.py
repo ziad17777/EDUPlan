@@ -21,7 +21,7 @@ from .serializers import (
 from files.models import UploadedFile
 
 HF_BASE_URL = "https://ziad177777-eduplan.hf.space"
-HF_TOKEN = "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"
+HF_TOKEN = ""
 # Lazily initialize gradio client to avoid network calls at import time and
 # to provide a safe fallback when the Hugging Face Space is unreachable.
 _GRADIO_CLIENT = None
